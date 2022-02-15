@@ -8,7 +8,7 @@
 #define _THR_XTHREADS_H
 #include <yvals_core.h>
 #if _STL_COMPILER_PREPROCESSOR
-#include <limits.h>
+#include <climits>
 #include <xtimec.h>
 
 #pragma pack(push, _CRT_PACKING)
@@ -28,27 +28,27 @@ struct _Thrd_t { // thread identifier for Win32
 // Size and alignment for _Mtx_internal_imp_t and _Cnd_internal_imp_t
 #ifdef _CRT_WINDOWS
 #ifdef _WIN64
-#define _Mtx_internal_imp_size      32
-#define _Mtx_internal_imp_alignment 8
-#define _Cnd_internal_imp_size      16
-#define _Cnd_internal_imp_alignment 8
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_size      = 32;
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_alignment = 8;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_size      = 16;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_alignment = 8;
 #else // _WIN64
-#define _Mtx_internal_imp_size      20
-#define _Mtx_internal_imp_alignment 4
-#define _Cnd_internal_imp_size      8
-#define _Cnd_internal_imp_alignment 4
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_size      = 20;
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_alignment = 4;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_size      = 8;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_alignment = 4;
 #endif // _WIN64
 #else // _CRT_WINDOWS
 #ifdef _WIN64
-#define _Mtx_internal_imp_size      80
-#define _Mtx_internal_imp_alignment 8
-#define _Cnd_internal_imp_size      72
-#define _Cnd_internal_imp_alignment 8
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_size      = 80;
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_alignment = 8;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_size      = 72;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_alignment = 8;
 #else // _WIN64
-#define _Mtx_internal_imp_size      48
-#define _Mtx_internal_imp_alignment 4
-#define _Cnd_internal_imp_size      40
-#define _Cnd_internal_imp_alignment 4
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_size      = 48;
+_INLINE_VAR constexpr size_t _Mtx_internal_imp_alignment = 4;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_size      = 40;
+_INLINE_VAR constexpr size_t _Cnd_internal_imp_alignment = 4;
 #endif // _WIN64
 #endif // _CRT_WINDOWS
 
@@ -82,7 +82,7 @@ _CRTIMP2_PURE int __cdecl _Mtx_current_owns(_Mtx_t);
 _CRTIMP2_PURE int __cdecl _Mtx_lock(_Mtx_t);
 _CRTIMP2_PURE int __cdecl _Mtx_trylock(_Mtx_t);
 _CRTIMP2_PURE int __cdecl _Mtx_timedlock(_Mtx_t, const xtime*);
-_CRTIMP2_PURE int __cdecl _Mtx_unlock(_Mtx_t);
+_CRTIMP2_PURE int __cdecl _Mtx_unlock(_Mtx_t); // TRANSITION, ABI: always returns _Thrd_success
 
 _CRTIMP2_PURE void* __cdecl _Mtx_getconcrtcs(_Mtx_t);
 _CRTIMP2_PURE void __cdecl _Mtx_clear_owner(_Mtx_t);
@@ -103,10 +103,10 @@ _CRTIMP2_PURE int __cdecl _Cnd_init(_Cnd_t*);
 _CRTIMP2_PURE void __cdecl _Cnd_destroy(_Cnd_t);
 _CRTIMP2_PURE void __cdecl _Cnd_init_in_situ(_Cnd_t);
 _CRTIMP2_PURE void __cdecl _Cnd_destroy_in_situ(_Cnd_t);
-_CRTIMP2_PURE int __cdecl _Cnd_wait(_Cnd_t, _Mtx_t);
+_CRTIMP2_PURE int __cdecl _Cnd_wait(_Cnd_t, _Mtx_t); // TRANSITION, ABI: Always returns _Thrd_success
 _CRTIMP2_PURE int __cdecl _Cnd_timedwait(_Cnd_t, _Mtx_t, const xtime*);
-_CRTIMP2_PURE int __cdecl _Cnd_broadcast(_Cnd_t);
-_CRTIMP2_PURE int __cdecl _Cnd_signal(_Cnd_t);
+_CRTIMP2_PURE int __cdecl _Cnd_broadcast(_Cnd_t); // TRANSITION, ABI: Always returns _Thrd_success
+_CRTIMP2_PURE int __cdecl _Cnd_signal(_Cnd_t); // TRANSITION, ABI: Always returns _Thrd_success
 _CRTIMP2_PURE void __cdecl _Cnd_register_at_thread_exit(_Cnd_t, _Mtx_t, int*);
 _CRTIMP2_PURE void __cdecl _Cnd_unregister_at_thread_exit(_Mtx_t);
 _CRTIMP2_PURE void __cdecl _Cnd_do_broadcast_at_thread_exit();

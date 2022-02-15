@@ -22,11 +22,9 @@ _STL_DISABLE_CLANG_WARNINGS
 // In particular, basic_string must not be included here.
 
 _STD_BEGIN
-// CLASS _Facet_base
 class _CRTIMP2_PURE_IMPORT _Facet_base { // code for reference counting a facet
 public:
-    virtual __CLR_OR_THIS_CALL ~_Facet_base() noexcept { // ensure that derived classes can be destroyed properly
-    }
+    virtual __CLR_OR_THIS_CALL ~_Facet_base() noexcept {} // ensure that derived classes can be destroyed properly
 
     // increment use count
     virtual void __CLR_OR_THIS_CALL _Incref() noexcept = 0;

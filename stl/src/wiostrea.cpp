@@ -6,7 +6,6 @@
 #include <iostream>
 _STD_BEGIN
 
-// OBJECT DECLARATIONS
 __PURE_APPDOMAIN_GLOBAL int _Winit::_Init_cnt = -1;
 
 _CRTIMP2_PURE __thiscall _Winit::_Winit() { // initialize standard wide streams first time
@@ -19,15 +18,15 @@ _CRTIMP2_PURE __thiscall _Winit::_Winit() { // initialize standard wide streams 
 
 _CRTIMP2_PURE __thiscall _Winit::~_Winit() noexcept { // flush standard wide streams last time
     if (--_Init_cnt == 0) { // flush standard wide streams
-        if (_Ptr_wcout != 0) {
+        if (_Ptr_wcout != nullptr) {
             _Ptr_wcout->flush();
         }
 
-        if (_Ptr_wcerr != 0) {
+        if (_Ptr_wcerr != nullptr) {
             _Ptr_wcerr->flush();
         }
 
-        if (_Ptr_wclog != 0) {
+        if (_Ptr_wclog != nullptr) {
             _Ptr_wclog->flush();
         }
     }

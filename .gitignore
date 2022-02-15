@@ -1,7 +1,12 @@
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+__pycache__/
 .vs/
 .vscode/
+/azure-devops/vmss-config.json
+/azure-devops/vmss-protected.json
+/build/
 /out/
 /tools/out/
+/CMakeLists.txt.user
