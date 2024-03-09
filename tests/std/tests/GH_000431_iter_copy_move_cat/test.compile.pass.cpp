@@ -309,9 +309,13 @@ struct StatefulPrivatelyDerived2 : private EmptyBase, private StatefulBase {};
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<EmptyBase, EmptyDerived>);
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<EmptyBase, EmptyPrivatelyDerived>);
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<StatefulBase, StatefulDerived>);
+#ifndef __EDG__ // TRANSITION, VSO-1849453
 STATIC_ASSERT(!is_pointer_interconvertible_base_of_v<EmptyBase, StatefulDerived>);
+#endif // ^^^ no workaround ^^^
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<StatefulBase, StatefulPrivatelyDerived>);
+#ifndef __EDG__ // TRANSITION, VSO-1849453
 STATIC_ASSERT(!is_pointer_interconvertible_base_of_v<EmptyBase, StatefulPrivatelyDerived>);
+#endif // ^^^ no workaround ^^^
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<StatefulBase, StatefulDerived2>);
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<EmptyBase, StatefulDerived2>);
 STATIC_ASSERT(is_pointer_interconvertible_base_of_v<StatefulBase, StatefulPrivatelyDerived2>);
@@ -387,7 +391,7 @@ void iter_cat_test_cases() {
     constexpr bool enable_derived_to_base =
 #ifdef __cpp_lib_is_pointer_interconvertible
         true
-#else // ^^^ __cpp_lib_is_pointer_interconvertible ^^^ / vvv !__cpp_lib_is_pointer_interconvertible vvv
+#else // ^^^ __cpp_lib_is_pointer_interconvertible / !__cpp_lib_is_pointer_interconvertible vvv
         false
 #endif // ^^^ !__cpp_lib_is_pointer_interconvertible ^^^
         ;
@@ -452,12 +456,12 @@ void iter_cat_test_cases() {
     test_iter_cat_for_types<false, false, false, true, TriviallyMoveAssignableStruct>();
 
     // Test different containers
-#ifdef __cpp_lib_concepts
+#if _HAS_CXX20
     test_iter_cat_for_containers<true, vector<int>, vector<int>>();
     test_iter_cat_for_containers<true, array<int, 8>, array<int, 8>>();
     test_iter_cat_for_containers<true, vector<int>, array<int, 8>>();
     test_iter_cat_for_containers<true, array<int, 8>, vector<int>>();
-#endif // __cpp_lib_concepts
+#endif // _HAS_CXX20
 
     test_iter_cat_for_containers<false, list<int>, list<int>>();
     test_iter_cat_for_containers<false, vector<int>, list<int>>();
@@ -466,12 +470,12 @@ void iter_cat_test_cases() {
     // Test double move_iterator
     test_iter_cat<true, true, true, true, move_iterator<int*>, int*>();
 
-#ifdef __cpp_lib_concepts
+#if _HAS_CXX20
     // Test counted_iterator
     test_iter_cat<true, true, true, true, counted_iterator<int*>, int*>();
     test_iter_cat<true, true, true, true, int*, counted_iterator<int*>>();
     test_iter_cat<true, true, true, true, counted_iterator<int*>, counted_iterator<int*>>();
-#endif // __cpp_lib_concepts
+#endif // _HAS_CXX20
 
     // No volatile
     test_iter_cat_for_trivially_copyable_types<false, volatile int, int>();
@@ -482,5 +486,3 @@ void iter_cat_test_cases() {
     test_iter_cat_for_containers<false, array<int, 8>, array<volatile int, 8>>();
     test_iter_cat_for_containers<false, array<volatile int, 8>, array<volatile int, 8>>();
 }
-
-int main() {} // COMPILE-ONLY

@@ -24,9 +24,7 @@ template <class Rng, class V = views::all_t<Rng>>
 using pipeline_t = ranges::elements_view<V, 0>;
 
 template <class Rng>
-concept CanViewElements = requires(Rng&& r) {
-    views::elements<0>(forward<Rng>(r));
-};
+concept CanViewElements = requires(Rng&& r) { views::elements<0>(forward<Rng>(r)); };
 
 constexpr P some_pairs[]        = {{0, -1}, {1, -2}, {2, -3}, {3, -4}, {4, -5}, {5, -6}, {6, -7}, {7, -8}};
 constexpr int expected_keys[]   = {0, 1, 2, 3, 4, 5, 6, 7};
@@ -52,7 +50,7 @@ constexpr bool test_one(Rng&& rng) {
     // ... with lvalue argument
     STATIC_ASSERT(CanViewElements<Rng&>);
     constexpr bool is_view = ranges::view<remove_cvref_t<Rng>>;
-    if constexpr (CanViewElements<Rng&>) { // Validate lvalue
+    { // Validate lvalue
         constexpr bool is_noexcept = !is_view || is_nothrow_copy_constructible_v<V>;
 
         STATIC_ASSERT(same_as<decltype(views::elements<0>(rng)), R>);
@@ -225,25 +223,65 @@ constexpr bool test_one(Rng&& rng) {
         same_as<sentinel_t<R>> auto i = r.end();
         static_assert(common_range<R> == common_range<V>);
         if constexpr (bidirectional_range<R> && common_range<R>) {
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1243263
             assert(*prev(i) == *prev(end(expected_keys)));
-#else // ^^^ no workaround / workaround vvv
-            assert(*ranges::prev(i) == *ranges::prev(end(expected_keys)));
-#endif // ^^^ workaround ^^^
         }
 
         if constexpr (CanEnd<const R&>) {
             same_as<sentinel_t<const R>> auto i2 = as_const(r).end();
             static_assert(common_range<const R> == common_range<const V>);
             if constexpr (bidirectional_range<const R> && common_range<const R>) {
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1243263
                 assert(*prev(i2) == *prev(end(expected_keys)));
-#else // ^^^ no workaround / workaround vvv
-                assert(*ranges::prev(i2) == *ranges::prev(end(expected_keys)));
-#endif // ^^^ workaround ^^^
             }
         }
     }
+
+#if _HAS_CXX23
+    using ranges::const_iterator_t, ranges::const_sentinel_t, ranges::cbegin, ranges::cend;
+
+    // Validate view_interface::cbegin
+    STATIC_ASSERT(CanMemberCBegin<R>);
+    STATIC_ASSERT(CanMemberCBegin<const R&> == range<const V>);
+    if (forward_range<V>) { // intentionally not if constexpr
+        const same_as<const_iterator_t<R>> auto i = r.cbegin();
+        if (!is_empty) {
+            assert(*i == *cbegin(expected_keys));
+        }
+
+        if constexpr (copyable<V>) {
+            auto r2                                    = r;
+            const same_as<const_iterator_t<R>> auto i2 = r2.cbegin();
+            if (!is_empty) {
+                assert(*i2 == *i);
+            }
+        }
+
+        if constexpr (CanCBegin<const R&>) {
+            const same_as<const_iterator_t<const R>> auto i3 = as_const(r).cbegin();
+            if (!is_empty) {
+                assert(*i3 == *i);
+            }
+        }
+    }
+
+    // Validate view_interface::cend
+    STATIC_ASSERT(CanMemberCEnd<R>);
+    STATIC_ASSERT(CanMemberCEnd<const R&> == range<const V>);
+    if (!is_empty) {
+        same_as<const_sentinel_t<R>> auto i = r.cend();
+        static_assert(common_range<R> == common_range<V>);
+        if constexpr (bidirectional_range<R> && common_range<R>) {
+            assert(*prev(i) == *prev(cend(expected_keys)));
+        }
+
+        if constexpr (CanCEnd<const R&>) {
+            same_as<const_sentinel_t<const R>> auto i2 = as_const(r).cend();
+            static_assert(common_range<const R> == common_range<const V>);
+            if constexpr (bidirectional_range<const R> && common_range<const R>) {
+                assert(*prev(i2) == *prev(cend(expected_keys)));
+            }
+        }
+    }
+#endif // _HAS_CXX23
 
     // Validate view_interface::data
     STATIC_ASSERT(!CanData<R>);
@@ -258,11 +296,7 @@ constexpr bool test_one(Rng&& rng) {
 
         STATIC_ASSERT(CanMemberBack<R> == (bidirectional_range<V> && common_range<V>) );
         if constexpr (CanMemberBack<R>) {
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1243263
             assert(r.back() == *prev(end(expected_keys)));
-#else // ^^^ no workaround / workaround vvv
-            assert(r.back() == *ranges::prev(end(expected_keys)));
-#endif // ^^^ workaround ^^^
         }
 
         STATIC_ASSERT(CanMemberFront<const R> == (forward_range<const V>) );
@@ -272,11 +306,7 @@ constexpr bool test_one(Rng&& rng) {
 
         STATIC_ASSERT(CanMemberBack<const R> == (bidirectional_range<const V> && common_range<const V>) );
         if constexpr (CanMemberBack<const R>) {
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1243263
             assert(as_const(r).back() == *prev(end(expected_keys)));
-#else // ^^^ no workaround / workaround vvv
-            assert(as_const(r).back() == *ranges::prev(end(expected_keys)));
-#endif // ^^^ workaround ^^^
         }
     }
 
@@ -301,11 +331,7 @@ constexpr bool test_one(Rng&& rng) {
         if (!is_empty) {
             assert((*b1.begin() == pair{0, -1})); // NB: depends on the test data
             if constexpr (bidirectional_range<V> && common_range<V>) {
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1243263
                 assert((*prev(b1.end()) == pair{7, -8})); // NB: depends on the test data
-#else // ^^^ no workaround / workaround vvv
-                assert((*ranges::prev(b1.end()) == pair{7, -8})); // NB: depends on the test data
-#endif // ^^^ workaround ^^^
             }
         }
     }
@@ -317,11 +343,7 @@ constexpr bool test_one(Rng&& rng) {
         if (!is_empty) {
             assert((*b2.begin() == pair{0, -1})); // NB: depends on the test data
             if constexpr (bidirectional_range<V> && common_range<V>) {
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1243263
                 assert((*prev(b2.end()) == pair{7, -8})); // NB: depends on the test data
-#else // ^^^ no workaround / workaround vvv
-                assert((*ranges::prev(b2.end()) == pair{7, -8})); // NB: depends on the test data
-#endif // ^^^ workaround ^^^
             }
         }
     }
@@ -370,6 +392,26 @@ constexpr void instantiation_test() {
     instantiator::call<test_range<contiguous_iterator_tag, Sized::yes, Common::no>>();
     instantiator::call<test_range<contiguous_iterator_tag, Sized::yes, Common::yes>>();
 #endif // TEST_EVERYTHING
+}
+
+// GH-3014 "<ranges>: list-initialization is misused"
+void test_gh_3014() { // COMPILE-ONLY
+    struct FwdRange {
+        P* begin() {
+            return nullptr;
+        }
+
+        test::init_list_not_constructible_iterator<P> begin() const {
+            return nullptr;
+        }
+
+        unreachable_sentinel_t end() const {
+            return {};
+        }
+    };
+
+    auto r                                           = FwdRange{} | views::elements<0>;
+    [[maybe_unused]] decltype(as_const(r).begin()) i = r.begin(); // Check 'iterator(iterator<!Const> i)'
 }
 
 int main() {

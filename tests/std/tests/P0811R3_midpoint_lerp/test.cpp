@@ -23,12 +23,9 @@ using namespace std;
 template <typename Ty>
 using limits = numeric_limits<Ty>;
 
-// "major" floating point exceptions, excluding underflow and inexact
-constexpr int fe_major_except = FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW;
-
 #ifdef _M_FP_STRICT
 // According to:
-// https://docs.microsoft.com/en-us/cpp/build/reference/fp-specify-floating-point-behavior
+// https://learn.microsoft.com/en-us/cpp/build/reference/fp-specify-floating-point-behavior
 // Under the default /fp:precise mode:
 //  The compiler generates code intended to run in the default floating-point environment and assumes that the
 //  floating-point environment is not accessed or modified at runtime.
@@ -86,6 +83,12 @@ private:
     fenv_t env;
 };
 
+constexpr int fe_invalid  = FE_INVALID;
+constexpr int fe_overflow = FE_OVERFLOW;
+
+// "major" floating point exceptions, excluding underflow and inexact
+constexpr int fe_major_except = FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW;
+
 bool check_feexcept(const int expected_excepts, const int except_mask = fe_major_except) {
     return fetestexcept(except_mask) == (expected_excepts & except_mask);
 }
@@ -100,8 +103,11 @@ public:
     ~ExceptGuard() {}
 };
 
-bool check_feexcept(
-    [[maybe_unused]] const int expected_excepts, [[maybe_unused]] const int except_mask = fe_major_except) {
+// These values are ignored. (FE_INVALID and FE_OVERFLOW aren't available for /clr.)
+constexpr int fe_invalid  = 0;
+constexpr int fe_overflow = 0;
+
+bool check_feexcept([[maybe_unused]] const int expected_excepts, [[maybe_unused]] const int except_mask = 0) {
     return true;
 }
 #endif // ^^^ !defined(_M_FP_STRICT) ^^^
@@ -508,11 +514,13 @@ void test_midpoint_floating() {
         assert(midpoint(limits<Ty>::denorm_min(), limits<Ty>::infinity()) == limits<Ty>::infinity());
         assert(midpoint(limits<Ty>::denorm_min(), -limits<Ty>::infinity()) == -limits<Ty>::infinity());
 
+#ifndef _M_CEE // TRANSITION, VSO-1666178
         assert_bitwise_equal(mint_nan<Ty>(0, 1), midpoint(mint_nan<Ty>(0, 1), Ty(0)));
         assert_bitwise_equal(mint_nan<Ty>(0, 1), midpoint(Ty(0), mint_nan<Ty>(0, 1)));
         assert_bitwise_equal(mint_nan<Ty>(0, 1), midpoint(mint_nan<Ty>(0, 1), limits<Ty>::max()));
         assert_bitwise_equal(mint_nan<Ty>(0, 1), midpoint(limits<Ty>::max(), mint_nan<Ty>(0, 1)));
         assert_bitwise_equal(mint_nan<Ty>(0, 1), midpoint(mint_nan<Ty>(0, 1), mint_nan<Ty>(0, 1)));
+#endif // ^^^ no workaround ^^^
 
         assert(isnan(midpoint(limits<Ty>::quiet_NaN(), Ty(2.0))));
         assert(isnan(midpoint(Ty(2.0), limits<Ty>::quiet_NaN())));
@@ -525,7 +533,7 @@ void test_midpoint_floating() {
     constexpr auto test_midpoint_fe_invalid = [](const Ty& a, const Ty& b) {
         ExceptGuard except;
         const auto answer = midpoint(a, b);
-        return check_feexcept(FE_INVALID) && isnan(answer);
+        return check_feexcept(fe_invalid) && isnan(answer);
     };
 
     Ty snan;
@@ -616,7 +624,7 @@ struct LerpNaNTestCase {
 
 template <typename Ty>
 struct LerpCases { // TRANSITION, VSO-934633
-    static inline constexpr LerpTestCase<Ty> lerpTestCases[] = {
+    static constexpr LerpTestCase<Ty> lerpTestCases[] = {
         {Ty(-1.0), Ty(1.0), Ty(2.0), Ty(3.0)},
         {Ty(0.0), Ty(1.0), Ty(2.0), Ty(2.0)},
         {Ty(-1.0), Ty(0.0), Ty(2.0), Ty(1.0)},
@@ -786,12 +794,12 @@ struct LerpCases { // TRANSITION, VSO-934633
         {Ty(1.0), -limits<Ty>::infinity(), limits<Ty>::infinity(), -limits<Ty>::infinity()},
     };
 
-    static inline constexpr LerpTestCase<Ty> lerpOverflowTestCases[] = {
+    static constexpr LerpTestCase<Ty> lerpOverflowTestCases[] = {
         {limits<Ty>::lowest(), limits<Ty>::max(), Ty(2.0), limits<Ty>::infinity()},
         {limits<Ty>::max(), limits<Ty>::lowest(), Ty(2.0), -limits<Ty>::infinity()},
     };
 
-    static inline constexpr LerpNaNTestCase<Ty> lerpInvalidTestCases[] = {
+    static constexpr LerpNaNTestCase<Ty> lerpInvalidTestCases[] = {
         // if the values are equal and T is an infinity, NaN
         {Ty(0), Ty(0), limits<Ty>::infinity()},
         {Ty(0), Ty(0), -limits<Ty>::infinity()},
@@ -847,7 +855,7 @@ struct LerpCases { // TRANSITION, VSO-934633
         {Ty(1.0), -limits<Ty>::infinity(), -Ty(0.0)},
     };
 
-    static inline constexpr LerpNaNTestCase<Ty> lerpNaNTestCases[] = {
+    static constexpr LerpNaNTestCase<Ty> lerpNaNTestCases[] = {
         {mint_nan<Ty>(0, 42), mint_nan<Ty>(1, 42), mint_nan<Ty>(0, 1729),
             {mint_nan<Ty>(0, 42), mint_nan<Ty>(1, 42), mint_nan<Ty>(0, 1729)}},
         {Ty(1.0), mint_nan<Ty>(1, 42), mint_nan<Ty>(0, 1729), {mint_nan<Ty>(1, 42), mint_nan<Ty>(0, 1729)}},
@@ -961,7 +969,7 @@ bool test_lerp() {
     for (auto&& testCase : LerpCases<Ty>::lerpOverflowTestCases) {
         ExceptGuard except;
         const auto answer = lerp(testCase.x, testCase.y, testCase.t);
-        if (!check_feexcept(FE_OVERFLOW) || memcmp(&answer, &testCase.expected, sizeof(Ty)) != 0) {
+        if (!check_feexcept(fe_overflow) || memcmp(&answer, &testCase.expected, sizeof(Ty)) != 0) {
             print_lerp_result(testCase, answer);
             abort();
         }
@@ -970,7 +978,7 @@ bool test_lerp() {
     for (auto&& testCase : LerpCases<Ty>::lerpInvalidTestCases) {
         ExceptGuard except;
         const auto answer = lerp(testCase.x, testCase.y, testCase.t);
-        if (!check_feexcept(FE_INVALID) || !isnan(answer)) {
+        if (!check_feexcept(fe_invalid) || !isnan(answer)) {
             print_lerp_result(testCase, answer);
             abort();
         }
@@ -991,7 +999,7 @@ bool test_lerp() {
     constexpr auto test_lerp_snan = [](const Ty& a, const Ty& b, const Ty& t) {
         ExceptGuard except;
         const auto answer = lerp(a, b, t);
-        return check_feexcept(FE_INVALID) && isnan(answer);
+        return check_feexcept(fe_invalid) && isnan(answer);
     };
 
     Ty snan;

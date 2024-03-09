@@ -32,11 +32,14 @@
 // DEALINGS IN THE SOFTWARE.
 
 
-#pragma once
 #ifndef _XCHARCONV_RYU_H
 #define _XCHARCONV_RYU_H
 #include <yvals_core.h>
 #if _STL_COMPILER_PREPROCESSOR
+
+#if !_HAS_CXX17
+#error The contents of <charconv> are only available with C++17. (Also, you should not include this internal header.)
+#endif // !_HAS_CXX17
 
 #include <cstring>
 #include <type_traits>
@@ -45,19 +48,19 @@
 #include <xcharconv_ryu_tables.h>
 #include <xutility>
 
-#if defined(_M_X64) && !defined(_M_ARM64EC)
+#if defined(_M_X64) || defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64)
 #define _HAS_CHARCONV_INTRINSICS 1
-#else // ^^^ intrinsics available ^^^ / vvv intrinsics unavailable vvv
+#else // ^^^ intrinsics available / intrinsics unavailable vvv
 #define _HAS_CHARCONV_INTRINSICS 0
 #endif // ^^^ intrinsics unavailable ^^^
 
 #if _HAS_CHARCONV_INTRINSICS
-#include <intrin0.h> // for _umul128() and __shiftright128()
+#if defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64)
+#include <intrin.h> // TRANSITION, VSO-1918426
+#else // ^^^ defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64) / defined(_M_X64) vvv
+#include _STL_INTRIN_HEADER // for _umul128(), __umulh(), and __shiftright128()
+#endif // ^^^ defined(_M_X64) ^^^
 #endif // ^^^ intrinsics available ^^^
-
-#if !_HAS_CXX17
-#error The contents of <charconv> are only available with C++17. (Also, you should not include this internal header.)
-#endif // !_HAS_CXX17
 
 #pragma pack(push, _CRT_PACKING)
 #pragma warning(push, _STL_WARNING_LEVEL)
@@ -146,22 +149,15 @@ inline constexpr int __DOUBLE_POW5_BITCOUNT = 121;
 #if _HAS_CHARCONV_INTRINSICS
 
 _NODISCARD inline uint64_t __ryu_umul128(const uint64_t __a, const uint64_t __b, uint64_t* const __productHi) {
+#if defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64)
+  *__productHi = __umulh(__a, __b);
+  return __a * __b;
+#else // ^^^ not native X64 / native X64 vvv
   return _umul128(__a, __b, __productHi);
+#endif // defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64)
 }
 
-_NODISCARD inline uint64_t __ryu_shiftright128(const uint64_t __lo, const uint64_t __hi, const uint32_t __dist) {
-  // For the __shiftright128 intrinsic, the shift value is always
-  // modulo 64.
-  // In the current implementation of the double-precision version
-  // of Ryu, the shift value is always < 64.
-  // (The shift value is in the range [49, 58].)
-  // Check this here in case a future change requires larger shift
-  // values. In this case this function needs to be adjusted.
-  _STL_INTERNAL_CHECK(__dist < 64);
-  return __shiftright128(__lo, __hi, static_cast<unsigned char>(__dist));
-}
-
-#else // ^^^ intrinsics available ^^^ / vvv intrinsics unavailable vvv
+#else // ^^^ intrinsics available / intrinsics unavailable vvv
 
 _NODISCARD __forceinline uint64_t __ryu_umul128(const uint64_t __a, const uint64_t __b, uint64_t* const __productHi) {
   // TRANSITION, VSO-634761
@@ -194,23 +190,28 @@ _NODISCARD __forceinline uint64_t __ryu_umul128(const uint64_t __a, const uint64
   return __pLo;
 }
 
+#endif // ^^^ intrinsics unavailable ^^^
+
 _NODISCARD inline uint64_t __ryu_shiftright128(const uint64_t __lo, const uint64_t __hi, const uint32_t __dist) {
-  // We don't need to handle the case __dist >= 64 here (see above).
+  // In the current implementation, the shift value is always < 64.
+  // If larger shift values are ever required, this function will need to be adjusted.
   _STL_INTERNAL_CHECK(__dist < 64);
-#ifdef _WIN64
-  _STL_INTERNAL_CHECK(__dist > 0);
+
+#if defined(_M_X64) && !defined(_M_ARM64EC)
+  return __shiftright128(__lo, __hi, static_cast<unsigned char>(__dist));
+#else // ^^^ __shiftright128 intrinsic available / __shiftright128 intrinsic unavailable vvv
+  if (__dist == 0) {
+    return __lo;
+  }
+
   return (__hi << (64 - __dist)) | (__lo >> __dist);
-#else // ^^^ 64-bit ^^^ / vvv 32-bit vvv
-  // Avoid a 64-bit shift by taking advantage of the range of shift values.
-  _STL_INTERNAL_CHECK(__dist >= 32);
-  return (__hi << (64 - __dist)) | (static_cast<uint32_t>(__lo >> 32) >> (__dist - 32));
-#endif // ^^^ 32-bit ^^^
+#endif // ^^^ __shiftright128 intrinsic unavailable ^^^
 }
 
-#endif // ^^^ intrinsics unavailable ^^^
 
 #ifndef _WIN64
 
+#if !defined(_M_HYBRID_X86_ARM64)
 // Returns the high 64 bits of the 128-bit product of __a and __b.
 _NODISCARD inline uint64_t __umulh(const uint64_t __a, const uint64_t __b) {
   // Reuse the __ryu_umul128 implementation.
@@ -220,6 +221,7 @@ _NODISCARD inline uint64_t __umulh(const uint64_t __a, const uint64_t __b) {
   (void) __ryu_umul128(__a, __b, &__hi);
   return __hi;
 }
+#endif // ^^^ !defined(_M_HYBRID_X86_ARM64) ^^^
 
 // On 32-bit platforms, compilers typically generate calls to library
 // functions for 64-bit divisions, even if the divisor is a constant.
@@ -266,7 +268,7 @@ _NODISCARD inline uint32_t __mod1e9(const uint64_t __x) {
   return static_cast<uint32_t>(__x) - 1000000000 * static_cast<uint32_t>(__div1e9(__x));
 }
 
-#else // ^^^ 32-bit ^^^ / vvv 64-bit vvv
+#else // ^^^ 32-bit / 64-bit vvv
 
 _NODISCARD inline uint64_t __div5(const uint64_t __x) {
   return __x / 5;
@@ -383,7 +385,7 @@ _NODISCARD inline uint32_t __mulShift_mod1e9(const uint64_t __m, const uint64_t*
   const uint64_t __shiftedhigh = __s1high >> __dist;
   const uint64_t __shiftedlow = __ryu_shiftright128(__s1low, __s1high, __dist);
   return __uint128_mod1e9(__shiftedhigh, __shiftedlow);
-#else // ^^^ intrinsics available ^^^ / vvv intrinsics unavailable vvv
+#else // ^^^ intrinsics available / intrinsics unavailable vvv
   if (__j < 160) { // __j: [128, 160)
     const uint64_t __r0 = __mod1e9(__s1high);
     const uint64_t __r1 = __mod1e9((__r0 << 32) | (__s1low >> 32));
@@ -904,7 +906,7 @@ _NODISCARD inline to_chars_result __d2exp_buffered_n(char* _First, char* const _
         __roundUp = 1;
       } else {
         if (__roundUp == 1 || __c % 2 != 0) {
-          _Round[0] = __c + 1;
+          _Round[0] = static_cast<char>(__c + 1);
         }
         break;
       }
@@ -1027,7 +1029,7 @@ _NODISCARD inline uint32_t __mulShift(const uint32_t __m, const uint64_t __facto
   __bits1Hi += (__bits1Lo < __bits0Hi);
   const int32_t __s = __shift - 32;
   return (__bits1Hi << (32 - __s)) | (__bits1Lo >> __s);
-#else // ^^^ 32-bit ^^^ / vvv 64-bit vvv
+#else // ^^^ 32-bit / 64-bit vvv
   const uint64_t __sum = (__bits0 >> 32) + __bits1;
   const uint64_t __shiftedSum = __sum >> (__shift - 32);
   _STL_INTERNAL_CHECK(__shiftedSum <= UINT32_MAX);
@@ -1318,7 +1320,7 @@ _NODISCARD pair<_CharT*, errc> __to_chars(_CharT* const _First, _CharT* const _L
   chars_format _Fmt, const uint32_t __ieeeMantissa, const uint32_t __ieeeExponent) {
   // Step 5: Print the decimal representation.
   uint32_t _Output = __v.__mantissa;
-  int32_t _Ryu_exponent = __v.__exponent;
+  const int32_t _Ryu_exponent = __v.__exponent;
   const uint32_t __olength = __decimalLength9(_Output);
   int32_t _Scientific_exponent = _Ryu_exponent + static_cast<int32_t>(__olength) - 1;
 
@@ -1681,7 +1683,7 @@ _NODISCARD inline uint64_t __mulShiftAll(const uint64_t __m, const uint64_t* con
   return __mulShift(4 * __m, __mul, __j);
 }
 
-#else // ^^^ intrinsics available ^^^ / vvv intrinsics unavailable vvv
+#else // ^^^ intrinsics available / intrinsics unavailable vvv
 
 _NODISCARD __forceinline uint64_t __mulShiftAll(uint64_t __m, const uint64_t* const __mul, const int32_t __j,
   uint64_t* const __vp, uint64_t* const __vm, const uint32_t __mmShift) { // TRANSITION, VSO-634761
@@ -1926,7 +1928,7 @@ _NODISCARD pair<_CharT*, errc> __to_chars(_CharT* const _First, _CharT* const _L
   chars_format _Fmt, const double __f) {
   // Step 5: Print the decimal representation.
   uint64_t _Output = __v.__mantissa;
-  int32_t _Ryu_exponent = __v.__exponent;
+  const int32_t _Ryu_exponent = __v.__exponent;
   const uint32_t __olength = __decimalLength17(_Output);
   int32_t _Scientific_exponent = _Ryu_exponent + static_cast<int32_t>(__olength) - 1;
 
@@ -2050,7 +2052,7 @@ _NODISCARD pair<_CharT*, errc> __to_chars(_CharT* const _First, _CharT* const _L
         unsigned long _Trailing_zero_bits;
 #ifdef _WIN64
         (void) _BitScanForward64(&_Trailing_zero_bits, __v.__mantissa); // __v.__mantissa is guaranteed nonzero
-#else // ^^^ 64-bit ^^^ / vvv 32-bit vvv
+#else // ^^^ 64-bit / 32-bit vvv
         const uint32_t _Low_mantissa = static_cast<uint32_t>(__v.__mantissa);
         if (_Low_mantissa != 0) {
           (void) _BitScanForward(&_Trailing_zero_bits, _Low_mantissa);

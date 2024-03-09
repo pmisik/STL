@@ -16,9 +16,7 @@
 using namespace std;
 
 template <class Rng, class Delimiter>
-concept CanViewSplit = requires(Rng&& r, Delimiter&& d) {
-    views::split(forward<Rng>(r), forward<Delimiter>(d));
-};
+concept CanViewSplit = requires(Rng&& r, Delimiter&& d) { views::split(forward<Rng>(r), forward<Delimiter>(d)); };
 
 constexpr auto equal_ranges    = [](auto&& left, auto&& right) { return ranges::equal(left, right); };
 constexpr auto text            = "This is a test, this is only a test."sv;
@@ -37,8 +35,7 @@ struct delimiter_view_impl<false> {
 };
 template <class Base, class Delimiter>
 using delimiter_view_t =
-    typename delimiter_view_impl<is_convertible_v<Delimiter, ranges::range_value_t<Base>>>::template apply<Base,
-        Delimiter>;
+    delimiter_view_impl<is_convertible_v<Delimiter, ranges::range_value_t<Base>>>::template apply<Base, Delimiter>;
 
 template <ranges::forward_range Base, class Delimiter, ranges::forward_range Expected>
 constexpr void test_one(Base&& base, Delimiter&& delimiter, Expected&& expected) {
@@ -71,8 +68,8 @@ constexpr void test_one(Base&& base, Delimiter&& delimiter, Expected&& expected)
     }
 
     // ... with const lvalue argument
-    STATIC_ASSERT(CanViewSplit<const remove_reference_t<Base>&,
-                      Delimiter&> == (!is_view || copy_constructible<remove_cvref_t<Base>>) );
+    STATIC_ASSERT(CanViewSplit<const remove_reference_t<Base>&, Delimiter&>
+                  == (!is_view || copy_constructible<remove_cvref_t<Base>>) );
     if constexpr (is_view && copy_constructible<remove_cvref_t<Base>>) {
         constexpr bool is_noexcept =
             is_nothrow_copy_constructible_v<remove_cvref_t<Base>> && is_nothrow_copy_constructible_v<DV>;
@@ -117,8 +114,8 @@ constexpr void test_one(Base&& base, Delimiter&& delimiter, Expected&& expected)
     }
 
     // ... with const rvalue argument
-    STATIC_ASSERT(CanViewSplit<const remove_reference_t<Base>,
-                      Delimiter&> == (is_view && copy_constructible<remove_cvref_t<Base>>) );
+    STATIC_ASSERT(CanViewSplit<const remove_reference_t<Base>, Delimiter&>
+                  == (is_view && copy_constructible<remove_cvref_t<Base>>) );
     if constexpr (is_view && copy_constructible<remove_cvref_t<Base>>) {
         constexpr bool is_noexcept =
             is_nothrow_copy_constructible_v<remove_cvref_t<Base>> && is_nothrow_copy_constructible_v<DV>;
@@ -358,9 +355,7 @@ int main() {
     STATIC_ASSERT(instantiation_test());
     instantiation_test();
 
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, DevCom-1516290
     STATIC_ASSERT(test_devcom_1559808());
-#endif // TRANSITION, DevCom-1516290
     test_devcom_1559808();
 
     STATIC_ASSERT(test_LWG_3590());

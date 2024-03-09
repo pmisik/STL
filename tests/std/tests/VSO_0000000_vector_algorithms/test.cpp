@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <algorithm>
+#include <bitset>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -12,12 +13,16 @@
 #include <limits>
 #include <list>
 #include <random>
+#include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
-#ifdef __cpp_lib_concepts
+#if _HAS_CXX20
 #include <ranges>
 #endif
+
+#include "test_min_max_element_support.hpp"
 
 using namespace std;
 
@@ -62,7 +67,7 @@ void disable_instructions(ISA_AVAILABILITY isa) {
 constexpr size_t dataCount = 1024;
 
 template <class FwdIt, class T>
-inline ptrdiff_t last_known_good_count(FwdIt first, FwdIt last, T v) {
+ptrdiff_t last_known_good_count(FwdIt first, FwdIt last, T v) {
     ptrdiff_t result = 0;
     for (; first != last; ++first) {
         result += (*first == v);
@@ -92,13 +97,27 @@ void test_count(mt19937_64& gen) {
 }
 
 template <class FwdIt, class T>
-inline auto last_known_good_find(FwdIt first, FwdIt last, T v) {
+auto last_known_good_find(FwdIt first, FwdIt last, T v) {
     for (; first != last; ++first) {
         if (*first == v) {
             break;
         }
     }
     return first;
+}
+
+template <class FwdIt, class T>
+auto last_known_good_find_last(FwdIt first, FwdIt last, T v) {
+    FwdIt last_save = last;
+    for (;;) {
+        if (last == first) {
+            return last_save;
+        }
+        --last;
+        if (*last == v) {
+            return last;
+        }
+    }
 }
 
 template <class T>
@@ -121,102 +140,76 @@ void test_find(mt19937_64& gen) {
     }
 }
 
-template <class FwdIt>
-FwdIt last_known_good_min_element(FwdIt first, FwdIt last) {
-    FwdIt result = first;
+#if _HAS_CXX20
+template <class T, size_t N>
+struct NormalArrayWrapper {
+    T m_arr[N];
+};
 
-    for (; first != last; ++first) {
-        if (*first < *result) {
-            result = first;
-        }
+// Also test GH-4454 "vector_algorithms.cpp: __std_find_trivial_unsized_impl assumes N-byte elements are N-aligned"
+#pragma pack(push, 1)
+template <class T, size_t N>
+struct PackedArrayWrapper {
+    uint8_t m_ignored; // to misalign the following array
+    T m_arr[N];
+};
+#pragma pack(pop)
+
+// GH-4449 <xutility>: ranges::find with unreachable_sentinel / __std_find_trivial_unsized_1 gives wrong result
+template <class T, template <class, size_t> class ArrayWrapper>
+void test_gh_4449_impl() {
+    constexpr T desired_val{11};
+    constexpr T unwanted_val{22};
+
+    ArrayWrapper<T, 256> wrapper;
+    auto& arr = wrapper.m_arr;
+
+    constexpr int mid1 = 64;
+    constexpr int mid2 = 192;
+
+    ranges::fill(arr, arr + mid1, desired_val);
+    ranges::fill(arr + mid1, arr + mid2, unwanted_val);
+    ranges::fill(arr + mid2, end(arr), desired_val);
+
+    for (int idx = mid1; idx <= mid2; ++idx) { // when idx == mid2, the value is immediately found
+        const auto where = ranges::find(arr + idx, unreachable_sentinel, desired_val);
+
+        assert(where == arr + mid2);
+
+        arr[idx] = desired_val; // get ready for the next iteration
     }
-
-    return result;
-}
-
-template <class FwdIt>
-FwdIt last_known_good_max_element(FwdIt first, FwdIt last) {
-    FwdIt result = first;
-
-    for (; first != last; ++first) {
-        if (*result < *first) {
-            result = first;
-        }
-    }
-
-    return result;
-}
-
-template <class FwdIt>
-pair<FwdIt, FwdIt> last_known_good_minmax_element(FwdIt first, FwdIt last) {
-    // find smallest and largest elements
-    pair<FwdIt, FwdIt> found(first, first);
-
-    if (first != last) {
-        while (++first != last) { // process one or two elements
-            FwdIt next = first;
-            if (++next == last) { // process last element
-                if (*first < *found.first) {
-                    found.first = first;
-                } else if (!(*first < *found.second)) {
-                    found.second = first;
-                }
-            } else { // process next two elements
-                if (*next < *first) { // test next for new smallest
-                    if (*next < *found.first) {
-                        found.first = next;
-                    }
-
-                    if (!(*first < *found.second)) {
-                        found.second = first;
-                    }
-                } else { // test first for new smallest
-                    if (*first < *found.first) {
-                        found.first = first;
-                    }
-
-                    if (!(*next < *found.second)) {
-                        found.second = next;
-                    }
-                }
-                first = next;
-            }
-        }
-    }
-
-    return found;
 }
 
 template <class T>
-void test_case_min_max_element(const vector<T>& input) {
-    auto expected_min    = last_known_good_min_element(input.begin(), input.end());
-    auto expected_max    = last_known_good_max_element(input.begin(), input.end());
-    auto expected_minmax = last_known_good_minmax_element(input.begin(), input.end());
-    auto actual_min      = min_element(input.begin(), input.end());
-    auto actual_max      = max_element(input.begin(), input.end());
-    auto actual_minmax   = minmax_element(input.begin(), input.end());
-    assert(expected_min == actual_min);
-    assert(expected_max == actual_max);
-    assert(expected_minmax == actual_minmax);
-#ifdef __cpp_lib_concepts
-    using ranges::views::take;
-
-    auto actual_min_range          = ranges::min_element(input);
-    auto actual_max_range          = ranges::max_element(input);
-    auto actual_minmax_range       = ranges::minmax_element(input);
-    auto actual_min_sized_range    = ranges::min_element(take(input, static_cast<ptrdiff_t>(input.size())));
-    auto actual_max_sized_range    = ranges::max_element(take(input, static_cast<ptrdiff_t>(input.size())));
-    auto actual_minmax_sized_range = ranges::minmax_element(take(input, static_cast<ptrdiff_t>(input.size())));
-    assert(expected_min == actual_min_range);
-    assert(expected_max == actual_max_range);
-    assert(expected_minmax.first == actual_minmax_range.min);
-    assert(expected_minmax.second == actual_minmax_range.max);
-    assert(expected_min == actual_min_sized_range);
-    assert(expected_max == actual_max_sized_range);
-    assert(expected_minmax.first == actual_minmax_sized_range.min);
-    assert(expected_minmax.second == actual_minmax_sized_range.max);
-#endif // __cpp_lib_concepts
+void test_gh_4449() {
+    test_gh_4449_impl<T, NormalArrayWrapper>();
+    test_gh_4449_impl<T, PackedArrayWrapper>();
 }
+#endif // _HAS_CXX20
+
+#if _HAS_CXX23
+template <class T>
+void test_case_find_last(const vector<T>& input, T v) {
+    auto expected = last_known_good_find_last(input.begin(), input.end(), v);
+    auto range    = ranges::find_last(input.begin(), input.end(), v);
+    auto actual   = range.begin();
+    assert(expected == actual);
+    assert(range.end() == input.end());
+}
+
+template <class T>
+void test_find_last(mt19937_64& gen) {
+    using TD = conditional_t<sizeof(T) == 1, int, T>;
+    binomial_distribution<TD> dis(10);
+    vector<T> input;
+    input.reserve(dataCount);
+    test_case_find_last(input, static_cast<T>(dis(gen)));
+    for (size_t attempts = 0; attempts < dataCount; ++attempts) {
+        input.push_back(static_cast<T>(dis(gen)));
+        test_case_find_last(input, static_cast<T>(dis(gen)));
+    }
+}
+#endif // _HAS_CXX23
 
 template <class T>
 void test_min_max_element(mt19937_64& gen) {
@@ -229,6 +222,31 @@ void test_min_max_element(mt19937_64& gen) {
     test_case_min_max_element(input);
     for (size_t attempts = 0; attempts < dataCount; ++attempts) {
         input.push_back(static_cast<T>(dis(gen)));
+        test_case_min_max_element(input);
+    }
+}
+
+template <class T>
+void test_min_max_element_floating(mt19937_64& gen) {
+    normal_distribution<T> dis(-100000.0, 100000.0);
+
+    constexpr auto input_of_input_size = dataCount / 2;
+    vector<T> input_of_input(input_of_input_size);
+    input_of_input[0] = -numeric_limits<T>::infinity();
+    input_of_input[1] = +numeric_limits<T>::infinity();
+    input_of_input[2] = -0.0;
+    input_of_input[3] = +0.0;
+    for (size_t i = 4; i < input_of_input_size; ++i) {
+        input_of_input[i] = dis(gen);
+    }
+
+    uniform_int_distribution<size_t> idx_dis(0, input_of_input_size - 1);
+
+    vector<T> input;
+    input.reserve(dataCount);
+    test_case_min_max_element(input);
+    for (size_t attempts = 0; attempts < dataCount; ++attempts) {
+        input.push_back(input_of_input[idx_dis(gen)]);
         test_case_min_max_element(input);
     }
 }
@@ -296,7 +314,7 @@ void test_min_max_element_special_cases() {
 }
 
 template <class BidIt>
-inline void last_known_good_reverse(BidIt first, BidIt last) {
+void last_known_good_reverse(BidIt first, BidIt last) {
     for (; first != last && first != --last; ++first) {
         iter_swap(first, last);
     }
@@ -344,7 +362,7 @@ void test_reverse_copy(mt19937_64& gen) {
 }
 
 template <class FwdIt1, class FwdIt2>
-inline FwdIt2 last_known_good_swap_ranges(FwdIt1 first1, const FwdIt1 last1, FwdIt2 dest) {
+FwdIt2 last_known_good_swap_ranges(FwdIt1 first1, const FwdIt1 last1, FwdIt2 dest) {
     for (; first1 != last1; ++first1, ++dest) {
         iter_swap(first1, dest);
     }
@@ -400,6 +418,25 @@ void test_vector_algorithms(mt19937_64& gen) {
     test_find<long long>(gen);
     test_find<unsigned long long>(gen);
 
+#if _HAS_CXX20
+    test_gh_4449<uint8_t>();
+    test_gh_4449<uint16_t>();
+    test_gh_4449<uint32_t>();
+    test_gh_4449<uint64_t>();
+#endif // _HAS_CXX20
+
+#if _HAS_CXX23
+    test_find_last<char>(gen);
+    test_find_last<signed char>(gen);
+    test_find_last<unsigned char>(gen);
+    test_find_last<short>(gen);
+    test_find_last<unsigned short>(gen);
+    test_find_last<int>(gen);
+    test_find_last<unsigned int>(gen);
+    test_find_last<long long>(gen);
+    test_find_last<unsigned long long>(gen);
+#endif // _HAS_CXX23
+
     test_min_max_element<char>(gen);
     test_min_max_element<signed char>(gen);
     test_min_max_element<unsigned char>(gen);
@@ -409,6 +446,10 @@ void test_vector_algorithms(mt19937_64& gen) {
     test_min_max_element<unsigned int>(gen);
     test_min_max_element<long long>(gen);
     test_min_max_element<unsigned long long>(gen);
+
+    test_min_max_element_floating<float>(gen);
+    test_min_max_element_floating<double>(gen);
+    test_min_max_element_floating<long double>(gen);
 
     test_min_max_element_pointers(gen);
 
@@ -488,28 +529,179 @@ void test_one_container() {
     test_two_containers<Container, list<int>>();
 }
 
+template <size_t N>
+bool test_randomized_bitset(mt19937_64& gen) {
+    string str;
+    wstring wstr;
+    str.reserve(N);
+    wstr.reserve(N);
+
+    while (str.size() != N) {
+        uint64_t random_value = gen();
+
+        for (int bits = 0; bits < 64 && str.size() != N; ++bits) {
+            const auto character = '0' + (random_value & 1);
+            str.push_back(static_cast<char>(character));
+            wstr.push_back(static_cast<wchar_t>(character));
+            random_value >>= 1;
+        }
+    }
+
+    const bitset<N> b(str);
+
+    assert(b.to_string() == str);
+    assert(b.template to_string<wchar_t>() == wstr);
+
+    return true;
+}
+
+template <size_t Base, size_t... Vals>
+void test_randomized_bitset_base(index_sequence<Vals...>, mt19937_64& gen) {
+    bool ignored[] = {test_randomized_bitset<Base + Vals>(gen)...};
+    (void) ignored;
+}
+
+template <size_t Base, size_t Count>
+void test_randomized_bitset_base_count(mt19937_64& gen) {
+    test_randomized_bitset_base<Base>(make_index_sequence<Count>{}, gen);
+}
+
+void test_bitset(mt19937_64& gen) {
+    assert(bitset<0>(0x0ULL).to_string() == "");
+    assert(bitset<0>(0xFEDCBA9876543210ULL).to_string() == "");
+    assert(bitset<15>(0x6789ULL).to_string() == "110011110001001");
+    assert(bitset<15>(0xFEDCBA9876543210ULL).to_string() == "011001000010000");
+    assert(bitset<32>(0xABCD1234ULL).to_string() == "10101011110011010001001000110100");
+    assert(bitset<32>(0xFEDCBA9876543210ULL).to_string() == "01110110010101000011001000010000");
+    assert(bitset<45>(0x1701D1729FFFULL).to_string() == "101110000000111010001011100101001111111111111");
+    assert(bitset<45>(0xFEDCBA9876543210ULL).to_string() == "110101001100001110110010101000011001000010000");
+    assert(bitset<64>(0xFEDCBA9876543210ULL).to_string()
+           == "1111111011011100101110101001100001110110010101000011001000010000");
+    assert(bitset<75>(0xFEDCBA9876543210ULL).to_string()
+           == "000000000001111111011011100101110101001100001110110010101000011001000010000");
+
+    assert(bitset<0>(0x0ULL).to_string<wchar_t>() == L"");
+    assert(bitset<0>(0xFEDCBA9876543210ULL).to_string<wchar_t>() == L"");
+    assert(bitset<15>(0x6789ULL).to_string<wchar_t>() == L"110011110001001");
+    assert(bitset<15>(0xFEDCBA9876543210ULL).to_string<wchar_t>() == L"011001000010000");
+    assert(bitset<32>(0xABCD1234ULL).to_string<wchar_t>() == L"10101011110011010001001000110100");
+    assert(bitset<32>(0xFEDCBA9876543210ULL).to_string<wchar_t>() == L"01110110010101000011001000010000");
+    assert(bitset<45>(0x1701D1729FFFULL).to_string<wchar_t>() == L"101110000000111010001011100101001111111111111");
+    assert(bitset<45>(0xFEDCBA9876543210ULL).to_string<wchar_t>() == L"110101001100001110110010101000011001000010000");
+    assert(bitset<64>(0xFEDCBA9876543210ULL).to_string<wchar_t>()
+           == L"1111111011011100101110101001100001110110010101000011001000010000");
+    assert(bitset<75>(0xFEDCBA9876543210ULL).to_string<wchar_t>()
+           == L"000000000001111111011011100101110101001100001110110010101000011001000010000");
+
+    assert(bitset<64>(0xFEDCBA9876543210ULL).to_string('o', 'x')
+           == "xxxxxxxoxxoxxxooxoxxxoxoxooxxooooxxxoxxooxoxoxooooxxooxooooxoooo");
+    assert(bitset<64>(0xFEDCBA9876543210ULL).to_string<wchar_t>(L'o', L'x')
+           == L"xxxxxxxoxxoxxxooxoxxxoxoxooxxooooxxxoxxooxoxoxooooxxooxooooxoooo");
+
+#ifdef __cpp_lib_char8_t
+    assert(bitset<75>(0xFEDCBA9876543210ULL).to_string<char8_t>()
+           == u8"000000000001111111011011100101110101001100001110110010101000011001000010000");
+#endif // __cpp_lib_char8_t
+    assert(bitset<75>(0xFEDCBA9876543210ULL).to_string<char16_t>()
+           == u"000000000001111111011011100101110101001100001110110010101000011001000010000");
+    assert(bitset<75>(0xFEDCBA9876543210ULL).to_string<char32_t>()
+           == U"000000000001111111011011100101110101001100001110110010101000011001000010000"); // not vectorized
+
+    test_randomized_bitset_base_count<512 - 5, 32 + 10>(gen);
+}
+
 void test_various_containers() {
     test_one_container<vector<int>>(); // contiguous, vectorizable
     test_one_container<deque<int>>(); // random-access, not vectorizable
     test_one_container<list<int>>(); // bidi, not vectorizable
 }
 
+#if _HAS_CXX20
+constexpr bool test_constexpr() {
+    const int a[] = {20, 10, 30, 30, 30, 30, 40, 60, 50};
+
+    assert(count(begin(a), end(a), 30) == 4);
+    assert(ranges::count(a, 30) == 4);
+
+    assert(find(begin(a), end(a), 30) == begin(a) + 2);
+    assert(ranges::find(a, 30) == begin(a) + 2);
+
+#if _HAS_CXX23
+    assert(begin(ranges::find_last(a, 30)) == begin(a) + 5);
+    assert(end(ranges::find_last(a, 30)) == end(a));
+#endif // _HAS_CXX23
+
+    assert(min_element(begin(a), end(a)) == begin(a) + 1);
+    assert(max_element(begin(a), end(a)) == end(a) - 2);
+    assert(get<0>(minmax_element(begin(a), end(a))) == begin(a) + 1);
+    assert(get<1>(minmax_element(begin(a), end(a))) == end(a) - 2);
+
+    assert(ranges::min_element(a) == begin(a) + 1);
+    assert(ranges::max_element(a) == end(a) - 2);
+    assert(ranges::minmax_element(a).min == begin(a) + 1);
+    assert(ranges::minmax_element(a).max == end(a) - 2);
+
+    assert(ranges::min(a) == 10);
+    assert(ranges::max(a) == 60);
+    assert(ranges::minmax(a).min == 10);
+    assert(ranges::minmax(a).max == 60);
+
+    int b[size(a)];
+    reverse_copy(begin(a), end(a), begin(b));
+    assert(equal(rbegin(a), rend(a), begin(b), end(b)));
+
+    int c[size(a)];
+    ranges::reverse_copy(a, c);
+    assert(equal(rbegin(a), rend(a), begin(c), end(c)));
+
+    reverse(begin(b), end(b));
+    assert(equal(begin(a), end(a), begin(b), end(b)));
+
+    swap_ranges(begin(b), end(b), begin(c));
+    assert(equal(rbegin(a), rend(a), begin(b), end(b)));
+    assert(equal(begin(a), end(a), begin(c), end(c)));
+
+    ranges::swap_ranges(b, c);
+    assert(equal(begin(a), end(a), begin(b), end(b)));
+    assert(equal(rbegin(a), rend(a), begin(c), end(c)));
+
+    ranges::reverse(c);
+    assert(equal(begin(a), end(a), begin(c), end(c)));
+
+    return true;
+}
+
+static_assert(test_constexpr());
+#endif // _HAS_CXX20
+
 int main() {
+#if _HAS_CXX20
+    assert(test_constexpr());
+#endif // _HAS_CXX20
+
     mt19937_64 gen;
     initialize_randomness(gen);
 
     test_vector_algorithms(gen);
     test_various_containers();
+    test_bitset(gen);
 #ifndef _M_CEE_PURE
 #if defined(_M_IX86) || defined(_M_X64)
     disable_instructions(__ISA_AVAILABLE_AVX2);
     test_vector_algorithms(gen);
+    test_various_containers();
+    test_bitset(gen);
+
     disable_instructions(__ISA_AVAILABLE_SSE42);
     test_vector_algorithms(gen);
+    test_various_containers();
+    test_bitset(gen);
 #endif // defined(_M_IX86) || defined(_M_X64)
 #if defined(_M_IX86)
     disable_instructions(__ISA_AVAILABLE_SSE2);
     test_vector_algorithms(gen);
+    test_various_containers();
+    test_bitset(gen);
 #endif // defined(_M_IX86)
 #endif // _M_CEE_PURE
 }

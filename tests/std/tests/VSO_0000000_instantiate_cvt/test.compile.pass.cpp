@@ -1,9 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#define _SILENCE_STDEXT_CVT_DEPRECATION_WARNING
 #define _USE_NAMED_IDL_NAMESPACE 1
-
-int main() {} // COMPILE-ONLY
 
 #ifndef _M_CEE_PURE // chk builds of /clr:pure compile this test extremely slowly.
 

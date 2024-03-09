@@ -105,8 +105,8 @@ void test_find(char* first, char* last) { // test searching template functions
     CHECK(STD is_permutation(first, last, p1, p1 + 7));
     CHECK(!STD is_permutation(first, last, p1, p1 + CSTD strlen(p1)));
     const char* p2 = "abcgfedxx";
-    CHECK(!STD is_permutation(first, last, p2 + 7));
-    CHECK(!STD is_permutation(first, last, p2 + CSTD strlen(p2)));
+    CHECK(!STD is_permutation(first, last, p2, p2 + 7));
+    CHECK(!STD is_permutation(first, last, p2, p2 + CSTD strlen(p2)));
 
     CHECK(STD is_permutation(first, last, first, last, &cmp_chars));
     const char* p3 = "aBCgfecxx";
@@ -165,8 +165,9 @@ void test_find(char* first, char* last) { // test searching template functions
 // TEST GENERATING TEMPLATE FUNCTIONS
 CSTD size_t gen_count = 0;
 void count_c(char ch) { // count calls with value 'c'
-    if (ch == 'c')
+    if (ch == 'c') {
         ++gen_count;
+    }
 }
 
 char gen_x() { // return literal x

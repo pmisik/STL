@@ -6,13 +6,15 @@
 #include <fstream>
 #include <iostream>
 
+#include "init_locks.hpp"
+
 #pragma warning(disable : 4074)
 #pragma init_seg(compiler)
 static std::_Init_locks initlocks;
 
 _STD_BEGIN
 
-__PURE_APPDOMAIN_GLOBAL static wfilebuf wfin(_cpp_stdin);
+__PURE_APPDOMAIN_GLOBAL static wfilebuf wfin(stdin);
 #if defined(_M_CEE_PURE)
 __PURE_APPDOMAIN_GLOBAL extern wistream wcin(&wfin);
 #else

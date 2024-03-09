@@ -41,8 +41,10 @@ private:
 
         pr = MyPromise();
 
-        if (when == set_after_get)
+        if (when == set_after_get) {
             fut = pr.get_future();
+        }
+
         if (what == set_a_value) {
             STD thread thr0(&future_tester_base::set_value, this);
             thr = STD move(thr0);
@@ -50,13 +52,18 @@ private:
             STD thread thr0(&future_tester_base::set_exception, this);
             thr = STD move(thr0);
         }
-        while (status == ready)
+
+        while (status == ready) {
             cnd.wait(lock);
-        if (when == set_before_get)
+        }
+
+        if (when == set_before_get) {
             fut = pr.get_future();
-        if (what == set_a_value)
+        }
+
+        if (what == set_a_value) {
             check_value();
-        else if (what == set_an_exception) { // get() should throw exception
+        } else if (what == set_an_exception) { // get() should throw exception
             bool thrown = false;
             try { // try to get()
                 fut.get();
@@ -98,10 +105,10 @@ private:
 
 template <template <class T> class Future>
 class future_value_tester : public future_tester_base<Future, int> { // class for testing Future<T>
-    virtual void do_set_value() override { // set the value
+    void do_set_value() override { // set the value
         this->pr.set_value(3);
     }
-    virtual void do_check_value() override { // check the value
+    void do_check_value() override { // check the value
         CHECK_INT(this->fut.get(), 3);
     }
 };
@@ -113,11 +120,11 @@ public:
     }
 
 private:
-    virtual void do_set_value() override { // set the value
+    void do_set_value() override { // set the value
         value = 3;
         this->pr.set_value(value);
     }
-    virtual void do_check_value() override { // check the value
+    void do_check_value() override { // check the value
         CHECK_INT(this->fut.get(), 3);
     }
     int value;
@@ -125,10 +132,10 @@ private:
 
 template <template <class T> class Future>
 class future_void_tester : public future_tester_base<Future, void> { // class for testing Future<void>
-    virtual void do_set_value() override { // set the value
+    void do_set_value() override { // set the value
         this->pr.set_value();
     }
-    virtual void do_check_value() override { // get the value
+    void do_check_value() override { // get the value
         this->fut.get(); // do not remove
     }
 };

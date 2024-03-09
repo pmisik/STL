@@ -395,12 +395,12 @@ static const regex_test tests[] = {
 
     {__LINE__, T("\\x1b"), T("\x1b"), "1 0 1", ECMA},
 
-#if WIDE
+#ifdef WIDE
     {__LINE__, T("\\u12cd"), T("\u12cd"), "1 0 1", ECMA},
     {__LINE__, T("\\u12cd"), T(""), "-1", NOT_ECMA},
-#else
+#else // defined WIDE
     {__LINE__, T("\\u12cd"), T(""), "-1", ALL},
-#endif
+#endif // defined WIDE
 
     {__LINE__, T("\\07"), T("\07"), "1 0 1", AWK},
     {__LINE__, T("\\177"), T("\177"), "1 0 1", AWK},
@@ -495,11 +495,11 @@ static const regex_test tests[] = {
     {__LINE__, T("[\\x1b]"), T("x"), "1 0 1", NOT_ECMA},
     {__LINE__, T("[\\x1b]"), T("1"), "1 0 1", NOT_ECMA},
     {__LINE__, T("[\\x1b]"), T("b"), "1 0 1", NOT_ECMA},
-#if WIDE
+#ifdef WIDE
     {__LINE__, T("[\\u12cd]"), T("\u12cd"), "1 0 1", ECMA},
-#else
+#else // defined WIDE
     {__LINE__, T("[\\u12cd]"), T(""), "-1", ECMA},
-#endif
+#endif // defined WIDE
     {__LINE__, T("[\\u12cd]"), T("\\"), "1 0 1", NOT_ECMA},
     {__LINE__, T("[\\u12cd]"), T("u"), "1 0 1", NOT_ECMA},
     {__LINE__, T("[\\u12cd]"), T("1"), "1 0 1", NOT_ECMA},
@@ -782,10 +782,11 @@ static STD string check_matches(
     STD ostringstream mtch;
     mtch << match.size();
     for (CSTD size_t i = 0; i < match.size(); ++i) { // append i-th capture group
-        if (match[i].matched)
+        if (match[i].matched) {
             mtch << ' ' << match.position(i) << ' ' << (match.position(i) + match.length(i));
-        else
+        } else {
             mtch << " -1 -1";
+        }
     }
     return mtch.str();
 }
@@ -795,18 +796,20 @@ static void check_match(unsigned int line, const CHR* re, const CHR* txt, const 
     const CHR* p;
     STD string str;
 
-    for (p = re; *p != 0; ++p)
+    for (p = re; *p != 0; ++p) {
         str.append(1, (char) *p);
+    }
     str.append(" |");
-    for (p = txt; *p != 0; ++p)
+    for (p = txt; *p != 0; ++p) {
         str.append(1, (char) *p);
+    }
     str.append("|");
 
     check_str(str.c_str(), __FILE__, line, mtch, res);
 }
 
 static void test_opt(STD regex_constants::syntax_option_type opts) { // do all valid tests for option set opts
-    for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i)
+    for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); ++i) {
         if (tests[i].valid & lang(opts)) { // do one test
 #if NO_EXCEPTIONS
             STD basic_regex<CHR> re(tests[i].re, opts);
@@ -827,30 +830,37 @@ static void test_opt(STD regex_constants::syntax_option_type opts) { // do all v
             }
 #endif // NO_EXCEPTIONS
         }
+    }
 }
 
 void test_main() { // test all six regular expression languages
-    if (!terse)
+    if (!terse) {
         puts("Testing ECMAScript");
+    }
     test_opt(STD regex_constants::ECMAScript);
 
-    if (!terse)
+    if (!terse) {
         puts("Testing UNIX BRE");
+    }
     test_opt(STD regex_constants::basic);
 
-    if (!terse)
+    if (!terse) {
         puts("Testing grep");
+    }
     test_opt(STD regex_constants::grep);
 
-    if (!terse)
+    if (!terse) {
         puts("Testing UNIX ERE");
+    }
     test_opt(STD regex_constants::extended);
 
-    if (!terse)
+    if (!terse) {
         puts("Testing egrep");
+    }
     test_opt(STD regex_constants::egrep);
 
-    if (!terse)
+    if (!terse) {
         puts("Testing awk");
+    }
     test_opt(STD regex_constants::awk);
 }

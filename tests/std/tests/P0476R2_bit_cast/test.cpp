@@ -32,7 +32,7 @@ struct middle_class_2 {
 };
 
 struct derived_class : middle_class_1, middle_class_2 {
-    virtual void a_member_function_2() override {}
+    void a_member_function_2() override {}
 };
 
 struct test_struct_1 {
@@ -219,10 +219,14 @@ constexpr bool test_float() {
     if (!std::is_constant_evaluated()) {
         assert(std::signbit(std::bit_cast<float>(as_int)) == true);
     }
+
+#ifndef _M_CEE // TRANSITION, VSO-1666161
     // signaling nan
     as_int     = 0x7fc00001;
     float snan = std::bit_cast<float>(as_int);
     assert(as_int == std::bit_cast<unsigned int>(snan));
+#endif // ^^^ no workaround ^^^
+
     as_int = std::bit_cast<unsigned int>(std::numeric_limits<float>::infinity());
     assert(as_int == 0x7f800000);
     assert(std::bit_cast<float>(as_int) == std::numeric_limits<float>::infinity());

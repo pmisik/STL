@@ -29,7 +29,7 @@ struct iterator_adaptor {
     iterator_adaptor(size_t n) : v(n) {}
 
     using iterator       = I;
-    using const_iterator = typename I::Consterator;
+    using const_iterator = I::Consterator;
 
     iterator begin() {
         return iterator{v.data()};
@@ -50,7 +50,9 @@ template <class... Is>
 struct helper {
     helper(second<Is, initializer_list<int>>... ils) : tup(ils...) {}
 
-    helper(initializer_list<int> il) requires(sizeof...(Is) > 1) : tup(second_v<Is>(il.size())...) {
+    helper(initializer_list<int> il)
+        requires (sizeof...(Is) > 1)
+        : tup(second_v<Is>(il.size())...) {
         get<0>(tup).v.assign(il);
     }
 
@@ -180,7 +182,7 @@ struct instantiator {
             C<cpp17_random_iter, Its...>::call();
         }
     };
-    using curry = typename curry_t<>::curry;
+    using curry = curry_t<>::curry;
 
     static void call() {
         curry_t<>::call();

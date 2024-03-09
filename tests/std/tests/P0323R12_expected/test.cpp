@@ -3,19 +3,22 @@
 
 #define _CONTAINER_DEBUG_LEVEL 1
 
+#include <any>
 #include <cassert>
 #include <concepts>
 #include <exception>
 #include <expected>
-#include <initializer_list>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 using namespace std;
 
 enum class IsDefaultConstructible : bool { Not, Yes };
 enum class IsTriviallyCopyConstructible : bool { Not, Yes };
 enum class IsTriviallyMoveConstructible : bool { Not, Yes };
+enum class IsTriviallyCopyAssignable : bool { Not, Yes };
+enum class IsTriviallyMoveAssignable : bool { Not, Yes };
 enum class IsTriviallyDestructible : bool { Not, Yes };
 
 enum class IsNothrowConstructible : bool { Not, Yes };
@@ -74,7 +77,7 @@ namespace test_unexpected {
 
             int _val = 0;
         };
-        using Unexpect = std::unexpected<test_error>;
+        using Unexpect = unexpected<test_error>;
 
         // [expected.un.ctor]
         const int& input = 1;
@@ -112,7 +115,7 @@ namespace test_unexpected {
         static_assert(noexcept(in_place_lvalue_constructed == in_place_lvalue_constructed) == compare_is_noexcept);
         static_assert(noexcept(in_place_lvalue_constructed != in_place_lvalue_constructed) == compare_is_noexcept);
 
-        const auto converted = std::unexpected<convertible>{convertible{3}};
+        const auto converted = unexpected<convertible>{convertible{3}};
         assert(base_error_constructed == converted);
         assert(conversion_error_constructed != converted);
         static_assert(noexcept(base_error_constructed == converted) == compare_is_noexcept);
@@ -147,7 +150,7 @@ namespace test_unexpected {
         static_assert(is_same_v<decltype(const_rvalue_error), const test_error&&>);
 
         // deduction guide
-        std::unexpected deduced(test_error{42});
+        unexpected deduced(test_error{42});
         static_assert(same_as<decltype(deduced), Unexpect>);
     }
 
@@ -181,7 +184,7 @@ namespace test_expected {
             using Expected = expected<value_tag, error_tag>;
             static_assert(same_as<typename Expected::value_type, value_tag>);
             static_assert(same_as<typename Expected::error_type, error_tag>);
-            static_assert(same_as<typename Expected::unexpected_type, std::unexpected<error_tag>>);
+            static_assert(same_as<typename Expected::unexpected_type, unexpected<error_tag>>);
 
             static_assert(same_as<typename Expected::rebind<int>, expected<int, error_tag>>);
         }
@@ -190,7 +193,7 @@ namespace test_expected {
             using Expected = expected<void, error_tag>;
             static_assert(same_as<typename Expected::value_type, void>);
             static_assert(same_as<typename Expected::error_type, error_tag>);
-            static_assert(same_as<typename Expected::unexpected_type, std::unexpected<error_tag>>);
+            static_assert(same_as<typename Expected::unexpected_type, unexpected<error_tag>>);
 
             static_assert(same_as<typename Expected::rebind<int>, expected<int, error_tag>>);
         }
@@ -198,10 +201,13 @@ namespace test_expected {
 
     template <IsDefaultConstructible defaultConstructible>
     constexpr void test_default_constructors() {
+#ifndef __EDG__ // TRANSITION, VSO-1898929
         constexpr bool should_be_defaultable = IsYes(defaultConstructible);
 
         struct payload_default_constructor {
-            constexpr payload_default_constructor() requires(should_be_defaultable) : _val(42) {}
+            constexpr payload_default_constructor()
+                requires (IsYes(defaultConstructible))
+                : _val(42) {}
 
             [[nodiscard]] constexpr bool operator==(const int val) const noexcept {
                 return _val == val;
@@ -220,19 +226,21 @@ namespace test_expected {
             assert(defaulted);
             assert(defaulted.value() == 42);
         }
+#endif // ^^^ no workaround ^^^
     }
 
     template <IsTriviallyCopyConstructible triviallyCopyConstructible,
         IsNothrowCopyConstructible nothrowCopyConstructible>
     constexpr void test_copy_constructors() {
+#ifndef __EDG__ // TRANSITION, VSO-1898929
         constexpr bool should_be_trivial  = IsYes(triviallyCopyConstructible);
         constexpr bool should_be_noexcept = should_be_trivial || IsYes(nothrowCopyConstructible);
 
         struct payload_copy_constructor {
             payload_copy_constructor()                                           = default;
             payload_copy_constructor& operator=(const payload_copy_constructor&) = delete;
-            constexpr payload_copy_constructor(const payload_copy_constructor&) noexcept(should_be_noexcept) //
-                requires(!should_be_trivial)
+            constexpr payload_copy_constructor(const payload_copy_constructor&) noexcept(should_be_noexcept)
+                requires (!should_be_trivial)
                 : _val(42) {}
             constexpr payload_copy_constructor(const payload_copy_constructor&) = default;
 
@@ -245,9 +253,7 @@ namespace test_expected {
 
         { // Check payload type
             using Expected = expected<payload_copy_constructor, int>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_copy_constructible_v<Expected> == should_be_trivial);
-#endif // !__clang__
             static_assert(is_copy_constructible_v<Expected>);
 
             const Expected with_value{in_place};
@@ -265,9 +271,7 @@ namespace test_expected {
 
         { // Check error type
             using Expected = expected<int, payload_copy_constructor>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_copy_constructible_v<Expected> == should_be_trivial);
-#endif // !__clang__
             static_assert(is_copy_constructible_v<Expected>);
 
             const Expected with_value{in_place};
@@ -285,9 +289,7 @@ namespace test_expected {
 
         { // Check void payload
             using Expected = expected<void, payload_copy_constructor>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_copy_constructible_v<Expected> == should_be_trivial);
-#endif // !__clang__
             static_assert(is_copy_constructible_v<Expected>);
 
             const Expected with_value{in_place};
@@ -301,6 +303,7 @@ namespace test_expected {
             assert(from_error.error() == (should_be_trivial ? 0 : 42));
             static_assert(noexcept(Expected{with_error}) == should_be_noexcept);
         }
+#endif // ^^^ no workaround ^^^
 
         { // ensure we are not copy constructible if either the payload or the error are not
             struct not_copy_constructible {
@@ -316,6 +319,7 @@ namespace test_expected {
     template <IsTriviallyMoveConstructible triviallyMoveConstructible,
         IsNothrowMoveConstructible nothrowMoveConstructible>
     constexpr void test_move_constructors() {
+#ifndef __EDG__ // TRANSITION, VSO-1898929
         constexpr bool should_be_trivial  = IsYes(triviallyMoveConstructible);
         constexpr bool should_be_noexcept = should_be_trivial || IsYes(nothrowMoveConstructible);
 
@@ -323,8 +327,8 @@ namespace test_expected {
             payload_move_constructor()                                      = default;
             payload_move_constructor(const payload_move_constructor&)       = default;
             payload_move_constructor& operator=(payload_move_constructor&&) = delete;
-            constexpr payload_move_constructor(payload_move_constructor&&) noexcept(should_be_noexcept) //
-                requires(!should_be_trivial)
+            constexpr payload_move_constructor(payload_move_constructor&&) noexcept(should_be_noexcept)
+                requires (!should_be_trivial)
                 : _val(42) {}
             constexpr payload_move_constructor(payload_move_constructor&&) = default;
 
@@ -337,9 +341,7 @@ namespace test_expected {
 
         { // Check payload type
             using Expected = expected<payload_move_constructor, int>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_move_constructible_v<Expected> == should_be_trivial);
-#endif // !__clang__
             static_assert(is_move_constructible_v<Expected>);
 
             Expected value_input{in_place};
@@ -357,9 +359,7 @@ namespace test_expected {
 
         { // Check error type
             using Expected = expected<int, payload_move_constructor>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_move_constructible_v<Expected> == should_be_trivial);
-#endif // !__clang__
             static_assert(is_move_constructible_v<Expected>);
 
             Expected value_input{in_place};
@@ -377,9 +377,7 @@ namespace test_expected {
 
         { // Check void payload
             using Expected = expected<void, payload_move_constructor>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_move_constructible_v<Expected> == should_be_trivial);
-#endif // !__clang__
             static_assert(is_move_constructible_v<Expected>);
 
             Expected value_input{in_place};
@@ -393,6 +391,7 @@ namespace test_expected {
             assert(from_error.error() == (should_be_trivial ? 0 : 42));
             static_assert(noexcept(Expected{move(error_input)}) == should_be_noexcept);
         }
+#endif // ^^^ no workaround ^^^
 
         { // ensure we are not move constructible if either the payload or the error are not
             struct not_move_constructible {
@@ -408,15 +407,12 @@ namespace test_expected {
     template <IsTriviallyDestructible triviallyDestructible>
     struct payload_destructor {
         constexpr payload_destructor(bool& destructor_called) : _destructor_called(destructor_called) {}
-        bool& _destructor_called;
-    };
-    template <> // TRANSITION, LLVM-46269
-    struct payload_destructor<IsTriviallyDestructible::Not> {
-        constexpr payload_destructor(bool& destructor_called) : _destructor_called(destructor_called) {}
-        payload_destructor(const payload_destructor&) = default;
+        // clang-format off
+        constexpr ~payload_destructor() requires (IsYes(triviallyDestructible)) = default;
+        // clang-format on
         constexpr ~payload_destructor() {
             _destructor_called = true;
-        };
+        }
 
         bool& _destructor_called;
     };
@@ -426,9 +422,7 @@ namespace test_expected {
         bool destructor_called    = false;
         { // Check payload
             using Expected = expected<payload_destructor<triviallyDestructible>, int>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_destructible_v<Expected> == is_trivial);
-#endif // !__clang__
 
             Expected val{in_place, destructor_called};
         }
@@ -437,9 +431,7 @@ namespace test_expected {
 
         { // Check error
             using Expected = expected<int, payload_destructor<triviallyDestructible>>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_destructible_v<Expected> == is_trivial);
-#endif // !__clang__
 
             Expected err{unexpect, destructor_called};
         }
@@ -448,9 +440,7 @@ namespace test_expected {
 
         { // Check void error
             using Expected = expected<void, payload_destructor<triviallyDestructible>>;
-#ifndef __clang__ // TRANSITION, LLVM-46269
             static_assert(is_trivially_destructible_v<Expected> == is_trivial);
-#endif // !__clang__
 
             Expected err{unexpect, destructor_called};
         }
@@ -553,7 +543,7 @@ namespace test_expected {
         }
 
         { // converting from unexpected
-            using Input    = std::unexpected<convertible>;
+            using Input    = unexpected<convertible>;
             using Expected = expected<int, payload_constructors>;
 
             const Input const_input{in_place};
@@ -634,7 +624,7 @@ namespace test_expected {
         }
 
         { // expected<void, E>: converting from unexpected
-            using Input    = std::unexpected<convertible>;
+            using Input    = unexpected<convertible>;
             using Expected = expected<void, payload_constructors>;
 
             const Input const_input{in_place};
@@ -681,6 +671,14 @@ namespace test_expected {
         test_constructors<IsNothrowConstructible::Not, IsExplicitConstructible::Yes>();
         test_constructors<IsNothrowConstructible::Yes, IsExplicitConstructible::Not>();
         test_constructors<IsNothrowConstructible::Yes, IsExplicitConstructible::Yes>();
+
+        // LWG-3836
+        struct BaseError {};
+        struct DerivedError : BaseError {};
+
+        expected<bool, DerivedError> e1(false);
+        expected<bool, BaseError> e2(e1);
+        assert(!e2.value());
     }
 
     template <IsNothrowCopyConstructible nothrowCopyConstructible, IsNothrowMoveConstructible nothrowMoveConstructible,
@@ -990,7 +988,7 @@ namespace test_expected {
         { // assign error type const ref
             constexpr bool should_be_noexcept = nothrow_copy_constructible && nothrow_copy_assignable;
             using Expected                    = expected<int, payload_assign>;
-            using Unexpected                  = std::unexpected<payload_assign>;
+            using Unexpected                  = unexpected<payload_assign>;
             const Unexpected input_error{42};
 
             Expected assign_error_to_value{in_place, 1};
@@ -1009,7 +1007,7 @@ namespace test_expected {
         { // assign expected<void> error type const ref
             constexpr bool should_be_noexcept = nothrow_copy_constructible && nothrow_copy_assignable;
             using Expected                    = expected<void, payload_assign>;
-            using Unexpected                  = std::unexpected<payload_assign>;
+            using Unexpected                  = unexpected<payload_assign>;
             const Unexpected input_error{42};
 
             Expected assign_error_to_value{in_place};
@@ -1028,7 +1026,7 @@ namespace test_expected {
         { // assign error type rvalue
             constexpr bool should_be_noexcept = nothrow_move_constructible && nothrow_move_assignable;
             using Expected                    = expected<int, payload_assign>;
-            using Unexpected                  = std::unexpected<payload_assign>;
+            using Unexpected                  = unexpected<payload_assign>;
 
             Expected assign_error_to_value{in_place, 1};
             assign_error_to_value = Unexpected{42};
@@ -1046,7 +1044,7 @@ namespace test_expected {
         { // assign expected<void> error type rvalue
             constexpr bool should_be_noexcept = nothrow_move_constructible && nothrow_move_assignable;
             using Expected                    = expected<void, payload_assign>;
-            using Unexpected                  = std::unexpected<payload_assign>;
+            using Unexpected                  = unexpected<payload_assign>;
 
             Expected assign_error_to_value{in_place};
             assign_error_to_value = Unexpected{42};
@@ -1064,7 +1062,7 @@ namespace test_expected {
         { // assign convertible error const ref
             constexpr bool should_be_noexcept = nothrow_copy_constructible && nothrow_copy_assignable;
             using Expected                    = expected<int, payload_assign>;
-            using Unexpected                  = std::unexpected<convertible>;
+            using Unexpected                  = unexpected<convertible>;
             const Unexpected input_error{42};
 
             Expected assign_error_to_value{in_place, 1};
@@ -1083,7 +1081,7 @@ namespace test_expected {
         { // assign expected<void> convertible error const ref
             constexpr bool should_be_noexcept = nothrow_copy_constructible && nothrow_copy_assignable;
             using Expected                    = expected<void, payload_assign>;
-            using Unexpected                  = std::unexpected<convertible>;
+            using Unexpected                  = unexpected<convertible>;
             const Unexpected input_error{42};
 
             Expected assign_error_to_value{in_place};
@@ -1102,7 +1100,7 @@ namespace test_expected {
         { // assign convertible error rvalue
             constexpr bool should_be_noexcept = nothrow_move_constructible && nothrow_move_assignable;
             using Expected                    = expected<int, payload_assign>;
-            using Unexpected                  = std::unexpected<convertible>;
+            using Unexpected                  = unexpected<convertible>;
 
             Expected assign_error_to_value{in_place, 1};
             assign_error_to_value = Unexpected{42};
@@ -1120,7 +1118,7 @@ namespace test_expected {
         { // assign expected<void> convertible error rvalue
             constexpr bool should_be_noexcept = nothrow_move_constructible && nothrow_move_assignable;
             using Expected                    = expected<void, payload_assign>;
-            using Unexpected                  = std::unexpected<convertible>;
+            using Unexpected                  = unexpected<convertible>;
 
             Expected assign_error_to_value{in_place};
             assign_error_to_value = Unexpected{42};
@@ -1194,6 +1192,174 @@ namespace test_expected {
         test_assignment<NCC::Yes, NMC::Yes, NCA::Not, NMA::Yes>();
         test_assignment<NCC::Yes, NMC::Yes, NCA::Yes, NMA::Not>();
         test_assignment<NCC::Yes, NMC::Yes, NCA::Yes, NMA::Yes>();
+    }
+
+    // Only test the triviality scenarios that occur in practice.
+    template <IsTriviallyCopyConstructible CC, IsTriviallyMoveConstructible MC, IsTriviallyCopyAssignable CA,
+        IsTriviallyMoveAssignable MA, IsTriviallyDestructible D>
+    struct TrivialityScenario {
+        static constexpr auto CopyCtorTriviality   = CC;
+        static constexpr auto MoveCtorTriviality   = MC;
+        static constexpr auto CopyAssignTriviality = CA;
+        static constexpr auto MoveAssignTriviality = MA;
+        static constexpr auto DtorTriviality       = D;
+    };
+
+    // No operations are trivial.
+    using TrivialityScenario1 = TrivialityScenario<IsTriviallyCopyConstructible::Not, IsTriviallyMoveConstructible::Not,
+        IsTriviallyCopyAssignable::Not, IsTriviallyMoveAssignable::Not, IsTriviallyDestructible::Not>;
+
+    // Only destruction is trivial.
+    using TrivialityScenario2 = TrivialityScenario<IsTriviallyCopyConstructible::Not, IsTriviallyMoveConstructible::Not,
+        IsTriviallyCopyAssignable::Not, IsTriviallyMoveAssignable::Not, IsTriviallyDestructible::Yes>;
+
+    // Only destruction and move construction are trivial.
+    using TrivialityScenario3 = TrivialityScenario<IsTriviallyCopyConstructible::Not, IsTriviallyMoveConstructible::Yes,
+        IsTriviallyCopyAssignable::Not, IsTriviallyMoveAssignable::Not, IsTriviallyDestructible::Yes>;
+
+    // Only destruction and move construction/assignment are trivial.
+    using TrivialityScenario4 = TrivialityScenario<IsTriviallyCopyConstructible::Not, IsTriviallyMoveConstructible::Yes,
+        IsTriviallyCopyAssignable::Not, IsTriviallyMoveAssignable::Yes, IsTriviallyDestructible::Yes>;
+
+    // Only destruction and copy/move construction are trivial.
+    using TrivialityScenario5 = TrivialityScenario<IsTriviallyCopyConstructible::Yes, IsTriviallyMoveConstructible::Yes,
+        IsTriviallyCopyAssignable::Not, IsTriviallyMoveAssignable::Not, IsTriviallyDestructible::Yes>;
+
+    // All operations are trivial.
+    using TrivialityScenario6 = TrivialityScenario<IsTriviallyCopyConstructible::Yes, IsTriviallyMoveConstructible::Yes,
+        IsTriviallyCopyAssignable::Yes, IsTriviallyMoveAssignable::Yes, IsTriviallyDestructible::Yes>;
+
+    // per LWG-4026, see also LLVM-74768
+    template <class PODType, class Scenario>
+    struct TrivialityTester {
+        PODType val{};
+
+        TrivialityTester() = default;
+
+        constexpr explicit TrivialityTester(PODType v) noexcept : val{v} {}
+
+        constexpr TrivialityTester(const TrivialityTester& other) noexcept : val{other.val} {}
+        constexpr TrivialityTester(const TrivialityTester&)
+            requires (Scenario::CopyCtorTriviality == IsTriviallyCopyConstructible::Yes)
+        = default;
+
+        constexpr TrivialityTester(TrivialityTester&& other) noexcept : val{other.val} {}
+        TrivialityTester(TrivialityTester&&)
+            requires (Scenario::MoveCtorTriviality == IsTriviallyMoveConstructible::Yes)
+        = default;
+
+        constexpr TrivialityTester& operator=(const TrivialityTester& other) noexcept {
+            val = other.val;
+            return *this;
+        }
+        TrivialityTester& operator=(const TrivialityTester&)
+            requires (Scenario::CopyAssignTriviality == IsTriviallyCopyAssignable::Yes)
+        = default;
+
+        constexpr TrivialityTester& operator=(TrivialityTester&& other) noexcept {
+            val = other.val;
+            return *this;
+        }
+        TrivialityTester& operator=(TrivialityTester&&)
+            requires (Scenario::MoveAssignTriviality == IsTriviallyMoveAssignable::Yes)
+        = default;
+
+        constexpr ~TrivialityTester() {}
+        ~TrivialityTester()
+            requires (Scenario::DtorTriviality == IsTriviallyDestructible::Yes)
+        = default;
+    };
+
+    template <class Val1, class OtherScenario>
+    constexpr void test_triviality_of_assignment_binary() {
+        using Val2 = TrivialityTester<char, OtherScenario>;
+        using E    = expected<Val1, Val2>;
+
+        static_assert(is_trivially_copy_assignable_v<E>
+                      == (is_trivially_copy_constructible_v<Val1> && is_trivially_copy_assignable_v<Val1>
+                          && is_trivially_destructible_v<Val1> && is_trivially_copy_constructible_v<Val2>
+                          && is_trivially_copy_assignable_v<Val2> && is_trivially_destructible_v<Val2>) );
+        static_assert(is_trivially_move_assignable_v<E>
+                      == (is_trivially_move_constructible_v<Val1> && is_trivially_move_assignable_v<Val1>
+                          && is_trivially_destructible_v<Val1> && is_trivially_move_constructible_v<Val2>
+                          && is_trivially_move_assignable_v<Val2> && is_trivially_destructible_v<Val2>) );
+
+        {
+            E e1{Val1{42}};
+            E e2{unexpect, Val2{'^'}};
+            e1 = e2;
+            assert(!e1.has_value());
+            assert(e1.error().val == '^');
+        }
+        {
+            E e1{Val1{42}};
+            E e2{unexpect, Val2{'^'}};
+            e1 = move(e2);
+            assert(!e1.has_value());
+            assert(e1.error().val == '^');
+        }
+        {
+            E e1{Val1{42}};
+            E e2{unexpect, Val2{'^'}};
+            e2 = e1;
+            assert(e2.has_value());
+            assert(e2.value().val == 42);
+        }
+        {
+            E e1{Val1{42}};
+            E e2{unexpect, Val2{'^'}};
+            e2 = move(e1);
+            assert(e2.has_value());
+            assert(e2.value().val == 42);
+        }
+    }
+
+    template <class Scenario>
+    constexpr void test_triviality_of_assignment() {
+        using Val = TrivialityTester<int, Scenario>;
+        using E   = expected<void, Val>;
+
+        static_assert(is_trivially_copy_assignable_v<E>
+                      == (is_trivially_copy_constructible_v<Val> && is_trivially_copy_assignable_v<Val>
+                          && is_trivially_destructible_v<Val>) );
+        static_assert(is_trivially_move_assignable_v<E>
+                      == (is_trivially_move_constructible_v<Val> && is_trivially_move_assignable_v<Val>
+                          && is_trivially_destructible_v<Val>) );
+
+        {
+            E e1{};
+            E e2{unexpect, Val{42}};
+            e1 = e2;
+            assert(!e1.has_value());
+            assert(e1.error().val == 42);
+        }
+        {
+            E e1{};
+            E e2{unexpect, Val{42}};
+            e1 = move(e2);
+            assert(!e1.has_value());
+            assert(e1.error().val == 42);
+        }
+
+        test_triviality_of_assignment_binary<Val, TrivialityScenario1>();
+        test_triviality_of_assignment_binary<Val, TrivialityScenario2>();
+        test_triviality_of_assignment_binary<Val, TrivialityScenario3>();
+        test_triviality_of_assignment_binary<Val, TrivialityScenario4>();
+        test_triviality_of_assignment_binary<Val, TrivialityScenario5>();
+        test_triviality_of_assignment_binary<Val, TrivialityScenario6>();
+    }
+
+    constexpr void test_triviality_of_assignment_all() {
+        test_triviality_of_assignment<TrivialityScenario1>();
+        test_triviality_of_assignment<TrivialityScenario2>();
+        test_triviality_of_assignment<TrivialityScenario3>();
+#ifndef __EDG__ // TRANSITION, VSO-1949451
+        test_triviality_of_assignment<TrivialityScenario4>();
+#endif // ^^^ no workaround ^^^
+        test_triviality_of_assignment<TrivialityScenario5>();
+#ifndef __EDG__ // TRANSITION, VSO-1949451
+        test_triviality_of_assignment<TrivialityScenario6>();
+#endif // ^^^ no workaround ^^^
     }
 
     constexpr void test_emplace() noexcept {
@@ -1293,7 +1459,7 @@ namespace test_expected {
         constexpr payload_swap(payload_swap&& other) noexcept(IsYes(nothrowMoveConstructible))
             : _val(other._val + 42) {}
         // Note: cannot declare friends of function local structs
-        constexpr friend void swap(payload_swap& left, payload_swap& right) noexcept(IsYes(nothrowSwappable)) {
+        friend constexpr void swap(payload_swap& left, payload_swap& right) noexcept(IsYes(nothrowSwappable)) {
             left._val = exchange(right._val, left._val);
         }
 
@@ -1951,7 +2117,7 @@ namespace test_expected {
 
         { // compare against unexpected with same base
             using Base       = payload_equality;
-            using Unexpected = std::unexpected<Base>;
+            using Unexpected = unexpected<Base>;
             using Expected   = expected<int, Base>;
 
             const Expected with_value{in_place, 42};
@@ -1970,7 +2136,7 @@ namespace test_expected {
 
         { // expected<void> compare against unexpected with same base
             using Base       = payload_equality;
-            using Unexpected = std::unexpected<Base>;
+            using Unexpected = unexpected<Base>;
             using Expected   = expected<void, Base>;
 
             const Expected with_value{in_place};
@@ -1986,7 +2152,7 @@ namespace test_expected {
 
         { // compare against unexpected with different base
             using Base       = payload_equality;
-            using Unexpected = std::unexpected<int>;
+            using Unexpected = unexpected<int>;
             using Expected   = expected<int, Base>;
 
             const Expected with_value{in_place, 42};
@@ -2005,7 +2171,7 @@ namespace test_expected {
 
         { // expected<void> compare against unexpected with different base
             using Base       = payload_equality;
-            using Unexpected = std::unexpected<int>;
+            using Unexpected = unexpected<int>;
             using Expected   = expected<void, Base>;
 
             const Expected with_value{in_place};
@@ -2030,6 +2196,7 @@ namespace test_expected {
         test_special_members();
         test_constructors();
         test_assignment();
+        test_triviality_of_assignment_all(); // per LWG-4026, see also LLVM-74768
         test_emplace();
         test_swap();
         test_access();
@@ -2063,6 +2230,93 @@ void test_reinit_regression() {
     }
 }
 
+// Defend against regression of llvm-project#59854, in which clang is confused
+// by the explicit `noexcept` on `expected`'s destructors.
+struct Data {
+    vector<int> vec_;
+    constexpr Data(initializer_list<int> il) : vec_(il) {}
+};
+static_assert(((void) expected<void, Data>{unexpect, {1, 2, 3}}, true));
+
+void test_lwg_3843() {
+    struct Indicator {
+        Indicator() = default;
+
+        Indicator(Indicator& other) noexcept : count(other.count + 256) {}
+        Indicator(const Indicator& other) noexcept : count(other.count + 1024) {}
+
+        Indicator(Indicator&& other) noexcept : count(other.count + 1) {}
+        Indicator(const Indicator&& other) noexcept : count(other.count + 16) {}
+
+        Indicator& operator=(const Indicator&) = default;
+        Indicator& operator=(Indicator&&)      = default;
+
+        int count = 0;
+    };
+
+    {
+        expected<int, Indicator> exv{unexpect};
+        assert(exv.error().count == 0);
+
+        try {
+            (void) exv.value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 1025);
+        }
+
+        try {
+            (void) as_const(exv).value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 1025);
+        }
+
+        try {
+            (void) move(exv).value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 2);
+        }
+
+        try {
+            (void) move(as_const(exv)).value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 17);
+        }
+    }
+
+    {
+        expected<void, Indicator> exv{unexpect};
+        assert(exv.error().count == 0);
+
+        try {
+            (void) exv.value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 1025);
+        }
+
+        try {
+            (void) as_const(exv).value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 1025);
+        }
+
+        try {
+            (void) move(exv).value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 2);
+        }
+
+        try {
+            (void) move(as_const(exv)).value();
+        } catch (const bad_expected_access<Indicator>& e) {
+            assert(e.error().count == 1025);
+        }
+    }
+}
+
+// Test GH-4011: these predicates triggered constraint recursion.
+static_assert(copyable<expected<any, int>>);
+static_assert(copyable<expected<void, any>>);
+
 int main() {
     test_unexpected::test_all();
     static_assert(test_unexpected::test_all());
@@ -2078,4 +2332,5 @@ int main() {
     static_assert(is_convertible_v<bad_expected_access<int>*, exception*>);
 
     test_reinit_regression();
+    test_lwg_3843();
 }

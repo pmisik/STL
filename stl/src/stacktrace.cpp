@@ -1,28 +1,24 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-// This must be as small as possible, because its contents are
-// injected into the msvcprt.lib and msvcprtd.lib import libraries.
-// Do not include or define anything else here.
-// In particular, basic_string must not be included here.
-
-#include <yvals.h>
-
 #include <cstdio>
 #include <cstdlib>
 
 // clang-format off
 #include <initguid.h> // should be before any header that includes <guiddef.h>
 #include <DbgEng.h>
+#include <DbgHelp.h>
 #include <Shlwapi.h>
 // clang-format on
 
 // The below function pointer types must be in sync with <stacktrace>
 
+extern "C" {
 using _Stacktrace_string_fill_callback = size_t(__stdcall*)(char* _Data, size_t _Size, void* _Context) _NOEXCEPT_FNPTR;
 
 using _Stacktrace_string_fill = size_t(__stdcall*)(
     size_t _Size, void* _String, void* _Context, _Stacktrace_string_fill_callback _Callback);
+} // extern "C"
 
 namespace {
     template <class F>
@@ -106,23 +102,15 @@ namespace {
                             (void) debug_control->WaitForEvent(0, INFINITE);
                         }
 
-                        constexpr ULONG add_options = 0x1 /* SYMOPT_CASE_INSENSITIVE */
-                                                    | 0x2 /* SYMOPT_UNDNAME */
-                                                    | 0x4 /* SYMOPT_DEFERRED_LOADS */
-                                                    | 0x10 /* SYMOPT_LOAD_LINES */
-                                                    | 0x20 /* SYMOPT_OMAP_FIND_NEAREST */
-                                                    | 0x100 /* SYMOPT_FAIL_CRITICAL_ERRORS */
-                                                    | 0x10000 /* SYMOPT_AUTO_PUBLICS */
-                                                    | 0x80000 /* SYMOPT_NO_PROMPTS */;
+                        constexpr ULONG add_options = SYMOPT_CASE_INSENSITIVE | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS
+                                                    | SYMOPT_LOAD_LINES | SYMOPT_OMAP_FIND_NEAREST
+                                                    | SYMOPT_FAIL_CRITICAL_ERRORS | SYMOPT_AUTO_PUBLICS
+                                                    | SYMOPT_NO_PROMPTS;
 
-                        constexpr ULONG remove_options = 0x8 /* SYMOPT_NO_CPP */
-                                                       | 0x40 /* SYMOPT_LOAD_ANYTHING */
-                                                       | 0x100 /* SYMOPT_NO_UNQUALIFIED_LOADS */
-                                                       | 0x400 /* SYMOPT_EXACT_SYMBOLS */
-                                                       | 0x1000 /* SYMOPT_IGNORE_NT_SYMPATH */
-                                                       | 0x4000 /* SYMOPT_PUBLICS_ONLY */
-                                                       | 0x8000 /* SYMOPT_NO_PUBLICS */
-                                                       | 0x20000 /* SYMOPT_NO_IMAGE_SEARCH */;
+                        constexpr ULONG remove_options = SYMOPT_NO_CPP | SYMOPT_LOAD_ANYTHING
+                                                       | SYMOPT_NO_UNQUALIFIED_LOADS | SYMOPT_EXACT_SYMBOLS
+                                                       | SYMOPT_IGNORE_NT_SYMPATH | SYMOPT_PUBLICS_ONLY
+                                                       | SYMOPT_NO_PUBLICS | SYMOPT_NO_IMAGE_SEARCH;
 
                         (void) debug_symbols->AddSymbolOptions(add_options);
                         (void) debug_symbols->RemoveSymbolOptions(remove_options);
@@ -165,8 +153,10 @@ namespace {
                 constexpr size_t max_disp_num = sizeof("+0x1122334455667788") - 1; // maximum possible offset
 
                 off = string_fill(fill, off + max_disp_num, str, [displacement, off](char* s, size_t) {
-                    const int ret = std::snprintf(s + off, max_disp_num, "+0x%llX", displacement);
-                    _STL_VERIFY(ret > 0, "formatting error");
+                    const int ret = std::snprintf(s + off, max_disp_num + 1, "+0x%llX", displacement);
+                    if (ret <= 0) {
+                        std::abort(); // formatting error
+                    }
                     return off + ret;
                 });
             }
@@ -229,8 +219,10 @@ namespace {
                 constexpr size_t max_line_num = sizeof("(4294967295): ") - 1; // maximum possible line number
 
                 off = string_fill(fill, off + max_line_num, str, [line, off](char* s, size_t) {
-                    const int ret = std::snprintf(s + off, max_line_num, "(%u): ", line);
-                    _STL_VERIFY(ret > 0, "formatting error");
+                    const int ret = std::snprintf(s + off, max_line_num + 1, "(%u): ", line);
+                    if (ret <= 0) {
+                        std::abort(); // formatting error
+                    }
                     return off + ret;
                 });
             }
@@ -255,7 +247,7 @@ namespace {
     }
 } // namespace
 
-_EXTERN_C
+extern "C" {
 #pragma optimize("", off) // inhibit tail call optimization to have consistent _Frames_to_skip adjustment here
 [[nodiscard]] unsigned short __stdcall __std_stacktrace_capture(unsigned long _Frames_to_skip,
     const unsigned long _Frames_to_capture, void** const _Back_trace, unsigned long* const _Back_trace_hash) noexcept {
@@ -330,12 +322,14 @@ void __stdcall __std_stacktrace_to_string(const void* const* const _Addresses, c
         constexpr size_t max_entry_num = sizeof("65536> ") - 1; // maximum possible entry number
 
         off = string_fill(_Fill, off + max_entry_num, _Str, [off, i](char* s, size_t) {
-            const int ret = std::snprintf(s + off, max_entry_num, "%u> ", static_cast<unsigned int>(i));
-            _STL_VERIFY(ret > 0, "formatting error");
+            const int ret = std::snprintf(s + off, max_entry_num + 1, "%u> ", static_cast<unsigned int>(i));
+            if (ret <= 0) {
+                std::abort(); // formatting error
+            }
             return off + ret;
         });
 
         off = locked_data.address_to_string(_Addresses[i], _Str, off, _Fill);
     }
 }
-_END_EXTERN_C
+} // extern "C"

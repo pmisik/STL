@@ -6,6 +6,9 @@
 #include <iostream>
 
 #include <Windows.h>
+
+#include "init_locks.hpp"
+
 _STD_BEGIN
 
 #if defined(_M_CEE) && !defined(_M_CEE_MIXED)
@@ -33,7 +36,7 @@ __PURE_APPDOMAIN_GLOBAL static void(__cdecl* atfuns_cdecl[_Nats])() = {};
 __PURE_APPDOMAIN_GLOBAL static size_t atcount_cdecl                 = _Nats;
 _MRTIMP2 void __cdecl _Atexit(void(__cdecl* pf)()) { // add to wrapup list
     if (atcount_cdecl == 0) {
-        abort(); // stack full, give up
+        _CSTD abort(); // stack full, give up
     } else {
         atfuns_cdecl[--atcount_cdecl] = reinterpret_cast<void(__cdecl*)()>(EncodePointer(reinterpret_cast<void*>(pf)));
     }

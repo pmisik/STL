@@ -3,32 +3,28 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#pragma once
 #ifndef __MSVC_INT128_HPP
 #define __MSVC_INT128_HPP
 
 #include <yvals_core.h>
 #if _STL_COMPILER_PREPROCESSOR
+#include <__msvc_bit_utils.hpp>
 #include <cstdint>
-#include <intrin.h> // TRANSITION, GH-2520
 #include <limits>
 #include <type_traits>
 
+#include _STL_INTRIN_HEADER
+
 #if _HAS_CXX20
-#include <bit>
 #include <compare>
+#include <concepts>
+#define _TEMPLATE_CLASS_INTEGRAL(type) template <integral type>
 #define _ZERO_OR_NO_INIT
 #else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
+#define _TEMPLATE_CLASS_INTEGRAL(type) template <class type, enable_if_t<is_integral_v<type>, int> = 0>
 #define _ZERO_OR_NO_INIT \
     {} // Trivial default initialization is not allowed in constexpr functions before C++20.
 #endif // ^^^ !_HAS_CXX20 ^^^
-
-#ifdef __cpp_lib_concepts
-#include <concepts>
-#define _TEMPLATE_CLASS_INTEGRAL(type) template <integral type>
-#else // ^^^ defined(__cpp_lib_concepts) / !defined(__cpp_lib_concepts) vvv
-#define _TEMPLATE_CLASS_INTEGRAL(type) template <class type, enable_if_t<is_integral_v<type>, int> = 0>
-#endif // ^^^ !defined(__cpp_lib_concepts) ^^^
 
 #pragma pack(push, _CRT_PACKING)
 #pragma warning(push, _STL_WARNING_LEVEL)
@@ -51,6 +47,24 @@ _STD_BEGIN
 #define _STL_128_INTRINSICS     0
 #define _STL_128_DIV_INTRINSICS 0
 #endif // ^^^ intrinsics unavailable ^^^
+
+template <class _Ty>
+_NODISCARD constexpr int _Countl_zero_internal(const _Ty _Val) noexcept {
+    _STL_INTERNAL_STATIC_ASSERT(_Is_standard_unsigned_integer<_Ty>);
+#if _HAS_COUNTL_ZERO_INTRINSICS
+#if (defined(_M_IX86) && !defined(_M_HYBRID_X86_ARM64)) || (defined(_M_X64) && !defined(_M_ARM64EC))
+    if (!_Is_constant_evaluated()) {
+        return _Checked_x86_x64_countl_zero(_Val);
+    }
+#elif defined(_M_ARM) || defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64)
+    if (!_Is_constant_evaluated()) {
+        return _Checked_arm_arm64_countl_zero(_Val);
+    }
+#endif // defined(_M_ARM) || defined(_M_ARM64) || defined(_M_ARM64EC) || defined(_M_HYBRID_X86_ARM64)
+#endif // _HAS_COUNTL_ZERO_INTRINSICS
+
+    return _Countl_zero_fallback(_Val);
+}
 
 struct
 #ifndef _M_ARM
@@ -139,10 +153,10 @@ struct
     static constexpr void _Knuth_4_3_1_M(
         const uint32_t (&__u)[__m], const uint32_t (&__v)[__n], uint32_t (&__w)[__n + __m]) noexcept {
 #ifdef _ENABLE_STL_INTERNAL_CHECK
-        constexpr auto _Int_max = size_t{(numeric_limits<int>::max)()};
+        constexpr auto _Int_max = static_cast<size_t>(INT_MAX);
         _STL_INTERNAL_STATIC_ASSERT(__m <= _Int_max);
         _STL_INTERNAL_STATIC_ASSERT(__n <= _Int_max);
-#endif // _ENABLE_STL_INTERNAL_CHECK
+#endif // defined(_ENABLE_STL_INTERNAL_CHECK)
 
         for (auto& _Elem : __w) {
             _Elem = 0;
@@ -188,7 +202,7 @@ struct
     static constexpr void _Knuth_4_3_1_D(uint32_t* const __u, const size_t __u_size, const uint32_t* const __v,
         const size_t __v_size, uint32_t* const __q) noexcept {
         // Pre: __u + [0, __u_size), __v + [0, __v_size), and __q + [0, __u_size - __v_size) are all valid ranges
-        // constexpr auto _Int_max = size_t{(numeric_limits<int>::max)()};
+        // constexpr auto _Int_max = static_cast<size_t>(INT_MAX);
         // _STL_INTERNAL_CHECK(__v_size <= _Int_max);
         const int __n = static_cast<int>(__v_size);
         // _STL_INTERNAL_CHECK(__u_size > __v_size);
@@ -248,11 +262,7 @@ struct
         }
 #endif // _STL_128_DIV_INTRINSICS
 
-#if _HAS_CXX20
-        const auto __d = _STD countl_zero(static_cast<uint32_t>(_Div >> 32));
-#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
-        const auto __d = _Countl_zero_fallback(static_cast<uint32_t>(_Div >> 32));
-#endif // ^^^ !_HAS_CXX20 ^^^
+        const auto __d = _Countl_zero_internal(static_cast<uint32_t>(_Div >> 32));
         if (__d >= 32) { // _Div < 2^32
             auto _Rem    = (_High << 32) | (_Low >> 32);
             auto _Result = _Rem / static_cast<uint32_t>(_Div);
@@ -294,7 +304,7 @@ struct
 
     _TEMPLATE_CLASS_INTEGRAL(_Ty)
     constexpr _Base128(const _Ty _Val) noexcept : _Word{static_cast<uint64_t>(_Val)} {
-#ifdef __cpp_lib_concepts
+#if _HAS_CXX20
         if constexpr (signed_integral<_Ty>)
 #else
         if constexpr (is_signed_v<_Ty>)
@@ -460,11 +470,7 @@ struct
         // _STL_INTERNAL_CHECK(_Den._Word[1] != 0);
         // _STL_INTERNAL_CHECK(_Num._Word[1] > _Den._Word[1]);
         // Normalize by shifting both left until _Den's high bit is set (So _Den's high digit is >= b / 2)
-#if _HAS_CXX20
-        const auto __d = _STD countl_zero(_Den._Word[1]);
-#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
-        const auto __d = _Countl_zero_fallback(_Den._Word[1]);
-#endif // ^^^ !_HAS_CXX20 ^^^
+        const auto __d = _Countl_zero_internal(_Den._Word[1]);
         _Den <<= __d;
         auto _High_digit = __d == 0 ? 0 : _Num._Word[1] >> (64 - __d); // This creates a third digit for _Num
         _Num <<= __d;
@@ -509,11 +515,7 @@ struct
         }
         return __qhat;
 #else // ^^^ 128-bit intrinsics / no such intrinsics vvv
-#if _HAS_CXX20
-        auto __d = _STD countl_zero(_Den._Word[1]);
-#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
-        auto __d = _Countl_zero_fallback(_Den._Word[1]);
-#endif // ^^^ !_HAS_CXX20 ^^^
+        auto __d                   = _Countl_zero_internal(_Den._Word[1]);
         const bool _Three_word_den = __d >= 32;
         __d &= 31;
         uint32_t __u[5]{
@@ -593,11 +595,7 @@ struct
         // _STL_INTERNAL_CHECK(_Den._Word[1] != 0);
         // _STL_INTERNAL_CHECK(_Num._Word[1] > _Den._Word[1]);
         // Normalize by shifting both left until _Den's high bit is set (So _Den's high digit is >= b / 2)
-#if _HAS_CXX20
-        const auto __d = _STD countl_zero(_Den._Word[1]);
-#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
-        const auto __d = _Countl_zero_fallback(_Den._Word[1]);
-#endif // ^^^ !_HAS_CXX20 ^^^
+        const auto __d = _Countl_zero_internal(_Den._Word[1]);
         _Den <<= __d;
         auto _High_digit = __d == 0 ? 0 : _Num._Word[1] >> (64 - __d); // This creates a third digit for _Num
         _Num <<= __d;
@@ -644,11 +642,7 @@ struct
             (void) _AddCarry64(_Carry, _Num._Word[1], _Den._Word[1], _Num._Word[1]);
         }
 #else // ^^^ 128-bit intrinsics / no such intrinsics vvv
-#if _HAS_CXX20
-        auto __d = _STD countl_zero(_Den._Word[1]);
-#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
-        auto __d = _Countl_zero_fallback(_Den._Word[1]);
-#endif // ^^^ !_HAS_CXX20 ^^^
+        auto __d                   = _Countl_zero_internal(_Den._Word[1]);
         const bool _Three_word_den = __d >= 32;
         __d &= 31;
         uint32_t __u[5]{
@@ -1025,22 +1019,6 @@ public:
     static constexpr int digits     = 128;
     static constexpr int digits10   = 38;
 };
-
-#ifdef __cpp_lib_concepts
-template <integral _Ty>
-struct common_type<_Ty, _Unsigned128> {
-    using type = _Unsigned128;
-};
-template <integral _Ty>
-struct common_type<_Unsigned128, _Ty> {
-    using type = _Unsigned128;
-};
-#else // ^^^ defined(__cpp_lib_concepts) / !defined(__cpp_lib_concepts) vvv
-template <class _Ty>
-struct common_type<_Ty, _Unsigned128> : enable_if<is_integral_v<_Ty>, _Unsigned128> {};
-template <class _Ty>
-struct common_type<_Unsigned128, _Ty> : enable_if<is_integral_v<_Ty>, _Unsigned128> {};
-#endif // ^^^ !defined(__cpp_lib_concepts) ^^^
 
 struct _Signed128 : _Base128 {
     using _Signed_type   = _Signed128;
@@ -1423,25 +1401,10 @@ public:
         return 0;
     }
 
-    static constexpr int digits   = 127;
-    static constexpr int digits10 = 38;
+    static constexpr int digits     = 127;
+    static constexpr int digits10   = 38;
+    static constexpr bool is_signed = true;
 };
-
-#ifdef __cpp_lib_concepts
-template <integral _Ty>
-struct common_type<_Ty, _Signed128> {
-    using type = _Signed128;
-};
-template <integral _Ty>
-struct common_type<_Signed128, _Ty> {
-    using type = _Signed128;
-};
-#else // ^^^ defined(__cpp_lib_concepts) / !defined(__cpp_lib_concepts) vvv
-template <class _Ty>
-struct common_type<_Ty, _Signed128> : enable_if<is_integral_v<_Ty>, _Signed128> {};
-template <class _Ty>
-struct common_type<_Signed128, _Ty> : enable_if<is_integral_v<_Ty>, _Signed128> {};
-#endif // ^^^ !defined(__cpp_lib_concepts) ^^^
 
 template <>
 struct common_type<_Signed128, _Unsigned128> {
@@ -1451,109 +1414,6 @@ template <>
 struct common_type<_Unsigned128, _Signed128> {
     using type = _Unsigned128;
 };
-
-inline namespace literals {
-    inline namespace _Int128_literals {
-        namespace _Int128_detail {
-            enum class _U128_parse_status : unsigned char {
-                _Valid,
-                _Overflow,
-                _Invalid,
-            };
-
-            struct _U128_parse_result {
-                _U128_parse_status _Status_code;
-                _Unsigned128 _Value;
-            };
-
-            _NODISCARD _CONSTEVAL unsigned int _Char_to_digit(const char _Ch) noexcept {
-                if (_Ch >= '0' && _Ch <= '9') {
-                    return static_cast<unsigned int>(_Ch - '0');
-                }
-
-                if (_Ch >= 'A' && _Ch <= 'F') {
-                    return static_cast<unsigned int>(_Ch - 'A' + 10);
-                }
-
-                if (_Ch >= 'a' && _Ch <= 'f') {
-                    return static_cast<unsigned int>(_Ch - 'a' + 10);
-                }
-
-                return static_cast<unsigned int>(-1);
-            }
-
-            template <unsigned int _Base, char... _Chars>
-            struct _Parse_u128_impl {
-                _NODISCARD static _CONSTEVAL _U128_parse_result _Parse() noexcept {
-                    if constexpr (sizeof...(_Chars) == 0) {
-                        return {_U128_parse_status::_Valid, 0};
-                    } else {
-                        constexpr char _Char_seq[]{_Chars...};
-                        constexpr auto _U128_max = (numeric_limits<_Unsigned128>::max)();
-
-                        _Unsigned128 _Val{};
-                        for (const char _Ch : _Char_seq) {
-                            if (_Ch == '\'') {
-                                continue;
-                            }
-
-                            const unsigned int _Digit = _Char_to_digit(_Ch);
-                            if (_Digit == static_cast<unsigned int>(-1)) {
-                                return {_U128_parse_status::_Invalid, _Unsigned128{}};
-                            }
-
-                            if (_Val > _U128_max / _Base || _Base * _Val > _U128_max - _Digit) {
-                                return {_U128_parse_status::_Overflow, _Unsigned128{}};
-                            }
-
-                            _Val = _Base * _Val + _Digit;
-                        }
-                        return {_U128_parse_status::_Valid, _Val};
-                    }
-                }
-            };
-
-            template <char... _Chars>
-            struct _Parse_u128 : _Parse_u128_impl<10, _Chars...> {};
-
-            template <char... _Chars>
-            struct _Parse_u128<'0', 'X', _Chars...> : _Parse_u128_impl<16, _Chars...> {};
-
-            template <char... _Chars>
-            struct _Parse_u128<'0', 'x', _Chars...> : _Parse_u128_impl<16, _Chars...> {};
-
-            template <char... _Chars>
-            struct _Parse_u128<'0', 'B', _Chars...> : _Parse_u128_impl<2, _Chars...> {};
-
-            template <char... _Chars>
-            struct _Parse_u128<'0', 'b', _Chars...> : _Parse_u128_impl<2, _Chars...> {};
-
-            template <char... _Chars>
-            struct _Parse_u128<'0', _Chars...> : _Parse_u128_impl<8, _Chars...> {};
-        } // namespace _Int128_detail
-
-        template <char... _Chars>
-        _NODISCARD _CONSTEVAL _Unsigned128 operator"" __u128() noexcept {
-            constexpr auto _Parsed_result = _Int128_detail::_Parse_u128<_Chars...>::_Parse();
-            static_assert(_Parsed_result._Status_code != _Int128_detail::_U128_parse_status::_Invalid,
-                "Invalid characters in the integer literal");
-            static_assert(_Parsed_result._Status_code != _Int128_detail::_U128_parse_status::_Overflow,
-                "The integer literal is too large for an unsigned 128-bit number");
-            return _Parsed_result._Value;
-        }
-
-        template <char... _Chars>
-        _NODISCARD _CONSTEVAL _Signed128 operator"" __i128() noexcept {
-            constexpr auto _Parsed_result = _Int128_detail::_Parse_u128<_Chars...>::_Parse();
-            static_assert(_Parsed_result._Status_code != _Int128_detail::_U128_parse_status::_Invalid,
-                "Invalid characters in the integer literal");
-            static_assert(_Parsed_result._Status_code != _Int128_detail::_U128_parse_status::_Overflow
-                              && _Parsed_result._Value._Word[1] < (static_cast<uint64_t>(1) << 63),
-                "The integer literal is too large for a signed 128-bit number");
-            return static_cast<_Signed128>(_Parsed_result._Value);
-        }
-    } // namespace _Int128_literals
-} // namespace literals
 
 #undef _STL_128_INTRINSICS
 #undef _STL_128_DIV_INTRINSICS

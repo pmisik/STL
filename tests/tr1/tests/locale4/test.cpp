@@ -65,41 +65,41 @@ void test_messages() { // test messages<wchar_t>
 
 struct Myxmpunct : public STD moneypunct<wchar_t, false> { // specify money punctuation
 protected:
-    virtual wchar_t do_decimal_point() const { // return decimal point
+    wchar_t do_decimal_point() const override { // return decimal point
         return L'_';
     }
 
-    virtual wchar_t do_thousands_sep() const { // return thousands separator
+    wchar_t do_thousands_sep() const override { // return thousands separator
         return L';';
     }
 
-    virtual STD string do_grouping() const { // return grouping rule
+    STD string do_grouping() const override { // return grouping rule
         return "\2";
     }
 
-    virtual STD wstring do_curr_symbol() const { // return currency symbol
+    STD wstring do_curr_symbol() const override { // return currency symbol
         return L"@@";
     }
 
-    virtual STD wstring do_positive_sign() const { // return positive sign
+    STD wstring do_positive_sign() const override { // return positive sign
         return L"+";
     }
 
-    virtual STD wstring do_negative_sign() const { // return negative sign
+    STD wstring do_negative_sign() const override { // return negative sign
         return L"-";
     }
 
-    virtual int do_frac_digits() const { // return number of fraction digits
+    int do_frac_digits() const override { // return number of fraction digits
         return 4;
     }
 
-    virtual pattern do_neg_format() const { // return pattern for negative format
+    pattern do_neg_format() const override { // return pattern for negative format
         static STD money_base::pattern pat = {
             {STD money_base::sign, STD money_base::symbol, STD money_base::value, STD money_base::none}};
         return pat;
     }
 
-    virtual pattern do_pos_format() const { // return pattern for positive format
+    pattern do_pos_format() const override { // return pattern for positive format
         static STD money_base::pattern pat = {
             {STD money_base::sign, STD money_base::none, STD money_base::symbol, STD money_base::value}};
         return pat;
@@ -110,39 +110,43 @@ struct Myxctype2 : public STD ctype<wchar_t> { // get protected members
     Myxctype2() { // default construct
     }
 
-    virtual wchar_t do_widen(char ch) const { // widen a character
-        if (ch == '-')
+    wchar_t do_widen(char ch) const override { // widen a character
+        if (ch == '-') {
             return L'@';
-        else if (ch == '0')
+        } else if (ch == '0') {
             return L'A';
-        else if (ch == '1')
+        } else if (ch == '1') {
             return L'b';
-        else
+        } else {
             return (wchar_t) ch;
+        }
     }
 
-    virtual const char* do_widen(const char* first, const char* last,
-        wchar_t* dest) const { // widen a character sequence
-        for (; first != last; ++first, ++dest)
+    const char* do_widen(const char* first, const char* last,
+        wchar_t* dest) const override { // widen a character sequence
+        for (; first != last; ++first, ++dest) {
             *dest = do_widen(*first);
+        }
         return first;
     }
 
-    virtual char do_narrow(wchar_t ch, char) const { // narrow a character
-        if (ch == L'P')
+    char do_narrow(wchar_t ch, char) const override { // narrow a character
+        if (ch == L'P') {
             return '%';
-        else if (ch == L'K')
+        } else if (ch == L'K') {
             return ':';
-        else if (ch == L'Z')
+        } else if (ch == L'Z') {
             return 'H';
-        else
+        } else {
             return (char) ch;
+        }
     }
 
-    virtual const wchar_t* do_narrow(
-        const wchar_t* first, const wchar_t* last, char, char* dest) const { // narrow a character sequence
-        for (; first != last; ++first, ++dest)
+    const wchar_t* do_narrow(
+        const wchar_t* first, const wchar_t* last, char, char* dest) const override { // narrow a character sequence
+        for (; first != last; ++first, ++dest) {
             *dest = do_narrow(*first, '\0');
+        }
         return first;
     }
 };

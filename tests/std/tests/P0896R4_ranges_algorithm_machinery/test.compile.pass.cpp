@@ -11,32 +11,13 @@
 #include <type_traits>
 #include <utility>
 
+#include <is_permissive.hpp>
+
+#pragma warning(disable : 4793) // function compiled as native: non-clrcall vcall thunks must be compiled as native
+
 #define STATIC_ASSERT(...) static_assert(__VA_ARGS__, #__VA_ARGS__)
 
 namespace ranges = std::ranges;
-
-int main() {} // COMPILE-ONLY
-
-namespace detail {
-    static constexpr bool permissive() {
-        return false;
-    }
-
-    template <class>
-    struct DependentBase {
-        static constexpr bool permissive() {
-            return true;
-        }
-    };
-
-    template <class T>
-    struct Derived : DependentBase<T> {
-        static constexpr bool test() {
-            return permissive();
-        }
-    };
-} // namespace detail
-constexpr bool is_permissive = detail::Derived<int>::test();
 
 template <bool>
 struct borrowed { // borrowed<true> is a borrowed_range; borrowed<false> is not
@@ -823,35 +804,47 @@ namespace mergeable_test {
 
         {
             using Bad_I1 = readable_archetype<int, readable_status::not_input_iter>;
+#ifndef _M_CEE // TRANSITION, VSO-1665670
             STATIC_ASSERT(!input_iterator<Bad_I1>);
+#endif // ^^^ no workaround ^^^
             STATIC_ASSERT(input_iterator<I2>);
             STATIC_ASSERT(weakly_incrementable<O>);
             STATIC_ASSERT(indirectly_copyable<Bad_I1, O>);
             STATIC_ASSERT(indirectly_copyable<I2, O>);
             STATIC_ASSERT(indirect_strict_weak_order<Pr, projected<Bad_I1, Pj1>, projected<I2, Pj2>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665670
             STATIC_ASSERT(!mergeable<Bad_I1, I2, O, Pr, Pj1, Pj2>);
+#endif // ^^^ no workaround ^^^
         }
 
         {
             using Bad_I2 = readable_archetype<long, readable_status::not_input_iter>;
             STATIC_ASSERT(input_iterator<I1>);
+#ifndef _M_CEE // TRANSITION, VSO-1665670
             STATIC_ASSERT(!input_iterator<Bad_I2>);
+#endif // ^^^ no workaround ^^^
             STATIC_ASSERT(weakly_incrementable<O>);
             STATIC_ASSERT(indirectly_copyable<I1, O>);
             STATIC_ASSERT(indirectly_copyable<Bad_I2, O>);
             STATIC_ASSERT(indirect_strict_weak_order<Pr, projected<I1, Pj1>, projected<Bad_I2, Pj2>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665670
             STATIC_ASSERT(!mergeable<I1, Bad_I2, O, Pr, Pj1, Pj2>);
+#endif // ^^^ no workaround ^^^
         }
 
         {
             using Bad_O = writable_archetype<writable_status::not_weakly_incrementable>;
             STATIC_ASSERT(input_iterator<I1>);
             STATIC_ASSERT(input_iterator<I2>);
+#ifndef _M_CEE // TRANSITION, VSO-1665670
             STATIC_ASSERT(!weakly_incrementable<Bad_O>);
+#endif // ^^^ no workaround ^^^
             STATIC_ASSERT(indirectly_copyable<I1, Bad_O>);
             STATIC_ASSERT(indirectly_copyable<I2, Bad_O>);
             STATIC_ASSERT(indirect_strict_weak_order<Pr, projected<I1, Pj1>, projected<I2, Pj2>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665670
             STATIC_ASSERT(!mergeable<I1, I2, Bad_O, Pr, Pj1, Pj2>);
+#endif // ^^^ no workaround ^^^
         }
 
         {
@@ -1096,7 +1089,7 @@ namespace special_memory_concepts {
     STATIC_ASSERT(ranges::range<range_archetype<range_status::input>>);
     STATIC_ASSERT(ranges::range<range_archetype<range_status::forward>>);
 
-    // Validate _No_throw_input_range; note that the distinction betweeen range<R> and
+    // Validate _No_throw_input_range; note that the distinction between range<R> and
     // no-throw-sentinel-for<sentinel_t<R>, iterator_t<R>> is purely semantic, so we can't test them separately.
     STATIC_ASSERT(!_No_throw_input_range<range_archetype<range_status::not_range>>);
     STATIC_ASSERT(!_No_throw_input_range<range_archetype<range_status::not_input>>);

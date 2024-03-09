@@ -15,9 +15,7 @@
 using namespace std;
 
 template <class Rng>
-concept CanViewReverse = requires(Rng&& r) {
-    views::reverse(forward<Rng>(r));
-};
+concept CanViewReverse = requires(Rng&& r) { views::reverse(forward<Rng>(r)); };
 
 // Test a silly precomposed range adaptor pipeline
 constexpr auto pipeline = views::all | views::reverse | views::all | views::reverse | views::all | views::reverse;
@@ -231,6 +229,64 @@ constexpr bool test_one(Rng&& rng, Expected&& expected) {
             static_assert(noexcept(as_const(r).end()) == noexcept(reverse_iterator{begin(as_const(rng))}));
         }
     }
+
+#if _HAS_CXX23
+    // Validate view_interface::cbegin
+    static_assert(CanMemberCBegin<R>);
+    {
+        // Ditto "let's make some extra calls because reverse_view sometimes caches begin"
+        const same_as<const_iterator<reverse_iterator<iterator_t<V>>>> auto ci = r.cbegin();
+        if (!is_empty) {
+            assert(*ci == *begin(expected));
+        }
+
+        if constexpr (copyable<V>) {
+            auto r2                                                                 = r;
+            const same_as<const_iterator<reverse_iterator<iterator_t<V>>>> auto ci2 = r2.cbegin();
+            assert(r2.cbegin() == ci2);
+            assert(r2.cbegin() == ci2);
+            if (!is_empty) {
+                assert(*ci2 == *ci);
+            }
+        }
+
+        static_assert(CanMemberCBegin<const R> == common_range<Rng>);
+        if constexpr (CanMemberCBegin<const R>) {
+            const same_as<const_iterator<reverse_iterator<iterator_t<const V>>>> auto ci3 = as_const(r).cbegin();
+            assert(as_const(r).cbegin() == ci3);
+            assert(as_const(r).cbegin() == ci3);
+            if (!is_empty) {
+                assert(*ci3 == *ci);
+            }
+
+            if constexpr (copyable<V>) {
+                const auto r2                                                                 = r;
+                const same_as<const_iterator<reverse_iterator<iterator_t<const V>>>> auto ci4 = r2.cbegin();
+                assert(r2.cbegin() == ci4);
+                assert(r2.cbegin() == ci4);
+                if (!is_empty) {
+                    assert(*ci4 == *ci);
+                }
+            }
+        }
+    }
+
+    // Validate view_interface::cend
+    static_assert(CanMemberCEnd<R>);
+    if (!is_empty) {
+        assert(*prev(r.cend()) == *prev(end(expected)));
+
+        if constexpr (copyable<V>) {
+            auto r2 = r;
+            assert(*prev(r2.cend()) == *prev(end(expected)));
+        }
+
+        static_assert(CanMemberCEnd<const R> == common_range<Rng>);
+        if constexpr (CanMemberCEnd<const R>) {
+            assert(*prev(as_const(r).cend()) == *prev(end(expected)));
+        }
+    }
+#endif // _HAS_CXX23
 
     // Validate view_interface::data
     static_assert(!CanData<R>);

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #define _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING
+#define _SILENCE_STDEXT_CVT_DEPRECATION_WARNING
+
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -35,8 +37,8 @@ using namespace std::filesystem;
 
 constexpr wstring_view badPath = L"// ?? ?? ///// ?? ?? ? ////"sv;
 const path nonexistentPaths[]  = {
-     L"C:/This/Path/Should/Not/Exist"sv,
-     L"//this_path_does_not_exist_on_the_network_e9da301701f70ead24c65bd30f600d15/docs"sv,
+    L"C:/This/Path/Should/Not/Exist"sv,
+    L"//this_path_does_not_exist_on_the_network_e9da301701f70ead24c65bd30f600d15/docs"sv,
 };
 constexpr wstring_view longSuffix =
     LR"(really\long\path\longer\than\max_path\goes\here\and it just goes)"
@@ -542,6 +544,7 @@ struct slash_test_case {
 };
 
 constexpr slash_test_case slashTestCases[] = {
+    {L""sv, L""sv, L""sv},
     {L"relative"sv, L"other"sv, LR"(relative\other)"sv},
     {L"//server"sv, L"share"sv, LR"(//server\share)"sv},
     {L"//server/"sv, L"share"sv, LR"(//server/share)"sv},
@@ -553,6 +556,7 @@ constexpr slash_test_case slashTestCases[] = {
     {L""sv, L"cat"sv, L"cat"sv},
     {L"./"sv, L"cat"sv, L"./cat"sv}, // original test case catching a bug in the above
     {L"c:"sv, L""sv, L"c:"sv},
+    {L"c:"sv, L"dog"sv, L"c:dog"sv},
     {L"c:cat"sv, L"/dog"sv, L"c:/dog"sv},
     {L"c:/cat"sv, L"/dog"sv, L"c:/dog"sv},
     {L"c:cat"sv, L"c:dog"sv, LR"(c:cat\dog)"sv},
@@ -566,13 +570,23 @@ constexpr slash_test_case slashTestCases[] = {
 bool run_slash_test_case(const slash_test_case& testCase) {
     path p(testCase.a);
     p /= testCase.b;
-    if (p.native() == testCase.expected) {
-        return true;
+
+    if (p.native() != testCase.expected) {
+        wcerr << L"With operator/=, expected " << testCase.a << L" / " << testCase.b << L" to be " << testCase.expected
+              << L" but it was " << p.native() << L"\n";
+        return false;
     }
 
-    wcerr << L"Expected " << testCase.a << L" / " << testCase.b << L" to be " << testCase.expected << L" but it was "
-          << p.native() << L"\n";
-    return false;
+    // Also test operator/, which was optimized by GH-4136.
+    p = path{testCase.a} / path{testCase.b};
+
+    if (p.native() != testCase.expected) {
+        wcerr << L"With operator/, expected " << testCase.a << L" / " << testCase.b << L" to be " << testCase.expected
+              << L" but it was " << p.native() << L"\n";
+        return false;
+    }
+
+    return true;
 }
 
 void test_iterators() {
@@ -857,7 +871,7 @@ void check_fs_error(const filesystem_error& e, const char* const msg, const stri
     if (ec.has_value()) {
         EXPECT(e.code() == ec.value());
     }
-};
+}
 
 void test_filesystem_error() {
     error_code ec1(22, system_category());
@@ -1517,6 +1531,7 @@ void expect_absolute(const path& input, const wstring_view expected) {
         if (actual.native() != expected) {
             wcerr << L"Actual result: " << actual.native() << L"\n";
         }
+
         if (ec) {
             wcerr << L"The call failed.\n";
         }
@@ -2245,6 +2260,26 @@ void test_copy_symlink() {
             EXPECT(good(ec));
         }
     }
+}
+
+void test_copy_directory_as_symlink() {
+    const path dirpath{L"./test-lwg2682-dir"sv};
+    error_code ec;
+    create_directory(dirpath, ec);
+    EXPECT(good(ec));
+    try {
+        copy(dirpath, L"./symlink"sv, copy_options::create_symlinks);
+        EXPECT(false);
+    } catch (const filesystem_error& e) {
+        EXPECT(e.code().value() == static_cast<int>(errc::is_a_directory));
+    }
+    {
+        error_code copy_ec;
+        copy(dirpath, L"./symlink"sv, copy_options::create_symlinks, copy_ec);
+        EXPECT(copy_ec.value() == static_cast<int>(errc::is_a_directory));
+    }
+    remove_all(dirpath, ec);
+    EXPECT(good(ec));
 }
 
 void equivalent_failure_test_case(const path& left, const path& right) {
@@ -3847,6 +3882,7 @@ basic_ostream<Elem, Traits>& operator<<(basic_ostream<Elem, Traits>& ostr, const
     if (p == perms::owner_all) {
         return ostr << L"perms::owner_all";
     }
+
     if (p == perms::owner_read) {
         return ostr << L"perms::owner_read";
     }
@@ -3994,6 +4030,8 @@ int wmain(int argc, wchar_t* argv[]) {
     test_copy_file();
 
     test_copy_symlink();
+
+    test_copy_directory_as_symlink(); // per LWG-2682
 
     test_conversions();
 

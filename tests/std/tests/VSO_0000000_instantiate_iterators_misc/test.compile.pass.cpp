@@ -18,6 +18,7 @@
 #define _SILENCE_CXX20_REL_OPS_DEPRECATION_WARNING
 #define _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING
 #define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING
 #define _SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING
 #define _USE_NAMED_IDL_NAMESPACE 1
 
@@ -93,16 +94,12 @@
 // Headers not allowed with /clr:pure
 #ifndef _M_CEE_PURE
 #include <atomic>
-#endif // _M_CEE_PURE
-
-// Headers not allowed to be used with /clr
-#ifndef _M_CEE
 #include <condition_variable>
 #include <future>
 #include <mutex>
 #include <shared_mutex>
 #include <thread>
-#endif // _M_CEE
+#endif // _M_CEE_PURE
 
 #include <experimental/filesystem>
 
@@ -112,8 +109,6 @@
 using namespace std;
 
 #define STATIC_ASSERT(...) static_assert(__VA_ARGS__, #__VA_ARGS__)
-
-int main() {} // COMPILE-ONLY
 
 #ifndef _M_CEE_PURE
 
@@ -296,7 +291,7 @@ void chrono_test() {
     (void) (ceil<duration<float>>(time_pt));
 }
 
-#ifndef _M_CEE
+#ifndef _M_CEE_PURE
 template <typename ConditionVariable>
 void condition_variable_test_impl() {
     ConditionVariable cv{};
@@ -316,7 +311,7 @@ void condition_variable_test_impl() {
 void condition_variable_test() {
     condition_variable_test_impl<condition_variable_any>();
 }
-#endif // _M_CEE
+#endif // _M_CEE_PURE
 
 void check_nested_exception_impl(const exception& ex) { // unroll nested exceptions
     try {
@@ -520,7 +515,7 @@ void functional_test() {
     // volatile binder calls not supported
 }
 
-#ifndef _M_CEE
+#ifndef _M_CEE_PURE
 template <typename Future>
 void future_test_impl(Future& f) {
     using namespace chrono;
@@ -575,18 +570,24 @@ void future_test() {
     TRAIT_V(uses_allocator, packaged_task<void()>, allocator<double>);
 #endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
 }
-#endif // _M_CEE
+#endif // _M_CEE_PURE
 
-template <typename IoManipIn, typename IoManipOut>
-void iomanip_test_impl(IoManipIn in, IoManipOut out) {
+template <typename IoManipOut, typename IoManipIn>
+void iomanip_test_impl(IoManipOut out, IoManipIn in) {
     stringstream ss{};
-    ss << in;
-    ss >> out;
+    ss << out;
+    ss >> in;
 }
 
 template <typename IoManip>
 void iomanip_test_impl(IoManip iom) {
     iomanip_test_impl(iom, iom);
+}
+
+template <typename IoManip>
+void iomanip_test_impl_for_setfill(IoManip out) {
+    stringstream ss{};
+    ss << out;
 }
 
 void iomanip_test() {
@@ -597,7 +598,7 @@ void iomanip_test() {
     localtime_s(&time, &t);
     string str = "string with \" quotes ";
 
-    iomanip_test_impl(sf);
+    iomanip_test_impl_for_setfill(sf);
     iomanip_test_impl(put_money(money), get_money(money));
     iomanip_test_impl(put_time(&time, "%c %Z"), get_time(&time, "%c %Z"));
     iomanip_test_impl(quoted(str.c_str()), quoted(str));
@@ -972,7 +973,7 @@ void memory_test() {
     owner_less_test_impl(owner_less<void>{}, sptr, wptr);
 }
 
-#ifndef _M_CEE
+#ifndef _M_CEE_PURE
 template <typename Mutex>
 void timed_mutex_test_impl() {
     Mutex mtx{};
@@ -1002,7 +1003,7 @@ void mutex_test() {
     timed_mutex_test_impl<timed_mutex>();
     timed_mutex_test_impl<recursive_timed_mutex>();
 }
-#endif // _M_CEE
+#endif // _M_CEE_PURE
 
 void ostream_test() {
     stringstream ss{};
@@ -1161,8 +1162,6 @@ void random_test() {
     distribution_test_impl(piece_line_d1);
     distribution_test_impl(piece_line_d2);
     distribution_test_impl(piece_line_d3);
-
-    (void) uni_int_d(gen, uni_int_d(gen));
 }
 
 void ratio_test() {
@@ -1280,7 +1279,8 @@ template <typename RegexTokenIterator>
 void regex_token_iterator_test_impl() {
     using it_type      = typename RegexTokenIterator::value_type::iterator;
     int submatches[10] = {0};
-    it_type start{}, finish{};
+    it_type start{};
+    it_type finish{};
     typename RegexTokenIterator::regex_type rgx{};
     RegexTokenIterator rti0(start, finish, rgx, submatches);
 }
@@ -1404,7 +1404,7 @@ void scoped_allocator_test() {
     equality_test(saa1, saa7);
 }
 
-#ifndef _M_CEE
+#ifndef _M_CEE_PURE
 void shared_mutex_test() {
     using namespace chrono;
 
@@ -1421,7 +1421,7 @@ void shared_mutex_test() {
     (void) sl2.try_lock_until(system_clock::now());
     swap_test(sl1);
 }
-#endif // _M_CEE
+#endif // _M_CEE_PURE
 
 template <typename T>
 void sstream_test_impl() {
@@ -1452,7 +1452,7 @@ void streambuf_test() {
     // istreambuf_iterator and ostreambuf_iterator covered in iterators test
 }
 
-#ifndef _M_CEE
+#ifndef _M_CEE_PURE
 void thread_test() {
     using namespace chrono;
 
@@ -1466,7 +1466,7 @@ void thread_test() {
     cout << thr_id;
     hash_test(thr_id);
 }
-#endif // _M_CEE
+#endif // _M_CEE_PURE
 
 void tuple_test() {
     allocator<double> my_alloc{};
@@ -1629,7 +1629,7 @@ void typeindex_test() {
 
 template <typename FunctorArg, typename Arg>
 void functors_test_impl(Arg val) {
-    // Following from <xstddef>:
+    // Following from <type_traits> and <xutility>:
     (void) plus<FunctorArg>()(val, val);
     (void) minus<FunctorArg>()(val, val);
     (void) multiplies<FunctorArg>()(val, val);

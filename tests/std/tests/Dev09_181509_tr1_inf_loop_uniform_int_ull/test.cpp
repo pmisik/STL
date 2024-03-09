@@ -1,16 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include <algorithm>
 #include <cassert>
 #include <cstdint>
-#include <execution>
 #include <limits>
 #include <random>
 #include <vector>
 
 using namespace std;
-using namespace std::execution;
 
 constexpr auto int16_min  = numeric_limits<int16_t>::min();
 constexpr auto int16_max  = numeric_limits<int16_t>::max();
@@ -127,5 +124,7 @@ int main() {
     add_tests<mt19937_64>(tests);
     add_tests<Wacky>(tests);
 
-    for_each(par, tests.begin(), tests.end(), [](fp_t fn) { fn(); });
+    for (const auto& fn : tests) {
+        fn();
+    }
 }

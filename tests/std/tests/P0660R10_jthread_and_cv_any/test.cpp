@@ -92,12 +92,15 @@ int main() {
         assert(!worker_b.joinable());
     }
 
-    { // self move assign, as of N4861 specified to try to cancel and join [thread.jthread.cons]/13
+    { // self move assign, defined to have no effects
         jthread worker{[] {}};
+        auto old_id = worker.get_id();
+        assert(old_id != jthread::id{});
         auto source = worker.get_stop_source();
         worker      = move(worker);
-        assert(!worker.joinable());
-        assert(source.stop_requested());
+        assert(worker.joinable());
+        assert(!source.stop_requested());
+        assert(old_id == worker.get_id());
     }
 
     { // swaps
@@ -136,7 +139,7 @@ int main() {
         assert(source.stop_possible());
     }
 
-    // TRANSITION, OS-11107628 "_Exit allows cleanup in other DLLs"
+    // TRANSITION, ArchivedOS-12440914 "_Exit allows cleanup in other DLLs"
     // detach() is intentionally not tested
 
     // get_id, get_stop_source, get_stop_token tested above

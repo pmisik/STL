@@ -11,6 +11,7 @@
 #include <Windows.h>
 
 namespace {
+    constexpr unsigned long long _Atomic_wait_no_deadline = 0xFFFF'FFFF'FFFF'FFFF;
 
     constexpr size_t _Wait_table_size_power = 8;
     constexpr size_t _Wait_table_size       = 1 << _Wait_table_size_power;
@@ -23,7 +24,7 @@ namespace {
         CONDITION_VARIABLE _Condition;
     };
 
-    struct _NODISCARD _Guarded_wait_context : _Wait_context {
+    struct [[nodiscard]] _Guarded_wait_context : _Wait_context {
         _Guarded_wait_context(const void* _Storage_, _Wait_context* const _Head) noexcept
             : _Wait_context{_Storage_, _Head, _Head->_Prev, CONDITION_VARIABLE_INIT} {
             _Prev->_Next = this;
@@ -41,7 +42,7 @@ namespace {
         _Guarded_wait_context& operator=(const _Guarded_wait_context&) = delete;
     };
 
-    class _NODISCARD _SrwLock_guard {
+    class [[nodiscard]] _SrwLock_guard {
     public:
         explicit _SrwLock_guard(SRWLOCK& _Locked_) noexcept : _Locked(&_Locked_) {
             AcquireSRWLockExclusive(_Locked);
@@ -57,7 +58,6 @@ namespace {
     private:
         SRWLOCK* _Locked;
     };
-
 
 #pragma warning(push)
 #pragma warning(disable : 4324) // structure was padded due to alignment specifier
@@ -86,16 +86,16 @@ namespace {
         if (GetLastError() != ERROR_TIMEOUT) {
             _CSTD abort();
         }
-#endif // _DEBUG
+#endif // defined(_DEBUG)
     }
 
 #ifndef _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE
 #if _STL_WIN32_WINNT >= _STL_WIN32_WINNT_WIN8
 #define _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE 1
-#else // ^^^ _STL_WIN32_WINNT >= _STL_WIN32_WINNT_WIN8 // _STL_WIN32_WINNT < _STL_WIN32_WINNT_WIN8 vvv
+#else // ^^^ _STL_WIN32_WINNT >= _STL_WIN32_WINNT_WIN8 / _STL_WIN32_WINNT < _STL_WIN32_WINNT_WIN8 vvv
 #define _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE 0
 #endif // ^^^ _STL_WIN32_WINNT < _STL_WIN32_WINNT_WIN8 ^^^
-#endif // _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE
+#endif // !defined(_ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE)
 
 #if _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE
 
@@ -106,7 +106,6 @@ namespace {
 #define __crtWakeByAddressAll    WakeByAddressAll
 
 #else // ^^^ _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE / !_ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE vvv
-
 
     struct _Wait_functions_table {
         _STD atomic<decltype(&::WaitOnAddress)> _Pfn_WaitOnAddress{nullptr};
@@ -120,7 +119,8 @@ namespace {
     void _Force_wait_functions_srwlock_only() noexcept {
         auto _Local = _Wait_functions._Api_level.load(_STD memory_order_acquire);
         if (_Local <= __std_atomic_api_level::__detecting) {
-            while (!_Wait_functions._Api_level.compare_exchange_weak(_Local, __std_atomic_api_level::__has_srwlock)) {
+            while (!_Wait_functions._Api_level.compare_exchange_weak(
+                _Local, __std_atomic_api_level::__has_srwlock, _STD memory_order_acq_rel)) {
                 if (_Local > __std_atomic_api_level::__detecting) {
                     return;
                 }
@@ -129,7 +129,8 @@ namespace {
     }
 
     [[nodiscard]] __std_atomic_api_level _Init_wait_functions(__std_atomic_api_level _Level) {
-        while (!_Wait_functions._Api_level.compare_exchange_weak(_Level, __std_atomic_api_level::__detecting)) {
+        while (!_Wait_functions._Api_level.compare_exchange_weak(
+            _Level, __std_atomic_api_level::__detecting, _STD memory_order_acq_rel)) {
             if (_Level > __std_atomic_api_level::__detecting) {
                 return _Level;
             }
@@ -202,8 +203,8 @@ namespace {
     }
 #endif // _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE
 
-    _NODISCARD unsigned char __std_atomic_compare_exchange_128_fallback(_Inout_bytecount_(16) long long* _Destination,
-        _In_ long long _ExchangeHigh, _In_ long long _ExchangeLow,
+    [[nodiscard]] unsigned char __std_atomic_compare_exchange_128_fallback(
+        _Inout_bytecount_(16) long long* _Destination, _In_ long long _ExchangeHigh, _In_ long long _ExchangeLow,
         _Inout_bytecount_(16) long long* _ComparandResult) noexcept {
         static SRWLOCK _Mtx = SRWLOCK_INIT;
         _SrwLock_guard _Guard{_Mtx};
@@ -221,8 +222,7 @@ namespace {
     }
 } // unnamed namespace
 
-
-_EXTERN_C
+extern "C" {
 int __stdcall __std_atomic_wait_direct(const void* const _Storage, void* const _Comparand, const size_t _Size,
     const unsigned long _Remaining_timeout) noexcept {
 #if _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE == 0
@@ -320,7 +320,7 @@ int __stdcall __std_atomic_wait_indirect(const void* _Storage, void* _Comparand,
             return FALSE;
         }
 
-        if (_Remaining_timeout != _Atomic_wait_no_timeout) {
+        if (_Remaining_timeout != __std_atomic_wait_no_timeout) {
             // spurious wake to recheck the clock
             return TRUE;
         }
@@ -336,8 +336,8 @@ unsigned long long __stdcall __std_atomic_wait_get_deadline(const unsigned long 
 }
 
 unsigned long __stdcall __std_atomic_wait_get_remaining_timeout(unsigned long long _Deadline) noexcept {
-    static_assert(_Atomic_wait_no_timeout == INFINITE,
-        "_Atomic_wait_no_timeout is passed directly to underlying API, so should match it");
+    static_assert(__std_atomic_wait_no_timeout == INFINITE,
+        "__std_atomic_wait_no_timeout is passed directly to underlying API, so should match it");
 
     if (_Deadline == _Atomic_wait_no_deadline) {
         return INFINITE;
@@ -360,7 +360,7 @@ __std_atomic_api_level __stdcall __std_atomic_set_api_level(__std_atomic_api_lev
 #if _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE
     (void) _Requested_api_level;
     return __std_atomic_api_level::__has_wait_on_address;
-#else // ^^^ _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE // !_ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE vvv
+#else // ^^^ _ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE / !_ATOMIC_WAIT_ON_ADDRESS_STATICALLY_AVAILABLE vvv
     switch (_Requested_api_level) {
     case __std_atomic_api_level::__not_set:
     case __std_atomic_api_level::__detecting:
@@ -397,28 +397,28 @@ _Smtx_t* __stdcall __std_atomic_get_mutex(const void* const _Key) noexcept {
 }
 #pragma warning(pop)
 
-_NODISCARD unsigned char __stdcall __std_atomic_compare_exchange_128(_Inout_bytecount_(16) long long* _Destination,
+[[nodiscard]] unsigned char __stdcall __std_atomic_compare_exchange_128(_Inout_bytecount_(16) long long* _Destination,
     _In_ long long _ExchangeHigh, _In_ long long _ExchangeLow,
     _Inout_bytecount_(16) long long* _ComparandResult) noexcept {
 #if !defined(_WIN64)
     return __std_atomic_compare_exchange_128_fallback(_Destination, _ExchangeHigh, _ExchangeLow, _ComparandResult);
 #elif _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1
     return _InterlockedCompareExchange128(_Destination, _ExchangeHigh, _ExchangeLow, _ComparandResult);
-#else // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 // _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 vvv
+#else // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 / _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 vvv
     if (__std_atomic_has_cmpxchg16b()) {
         return _InterlockedCompareExchange128(_Destination, _ExchangeHigh, _ExchangeLow, _ComparandResult);
     }
 
     return __std_atomic_compare_exchange_128_fallback(_Destination, _ExchangeHigh, _ExchangeLow, _ComparandResult);
-#endif // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0
+#endif // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 ^^^
 }
 
-_NODISCARD char __stdcall __std_atomic_has_cmpxchg16b() noexcept {
+[[nodiscard]] char __stdcall __std_atomic_has_cmpxchg16b() noexcept {
 #if !defined(_WIN64)
     return false;
 #elif _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1
     return true;
-#else // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 // _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 vvv
+#else // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 / _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 vvv
     constexpr char _Cmpxchg_Absent  = 0;
     constexpr char _Cmpxchg_Present = 1;
     constexpr char _Cmpxchg_Unknown = 2;
@@ -432,6 +432,6 @@ _NODISCARD char __stdcall __std_atomic_has_cmpxchg16b() noexcept {
     }
 
     return _Value;
-#endif // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0
+#endif // ^^^ _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 ^^^
 }
-_END_EXTERN_C
+} // extern "C"

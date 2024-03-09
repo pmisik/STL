@@ -62,34 +62,27 @@ struct mapped<basic_string_view<CharT, Traits>> {
     template <class>
     using apply = basic_string_view<CharT, Traits>;
 };
-// clang-format off
 template <class W, class B>
-    requires ranges::random_access_range<ranges::iota_view<W, B>>
-        && ranges::sized_range<ranges::iota_view<W, B>>
+    requires ranges::random_access_range<ranges::iota_view<W, B>> && ranges::sized_range<ranges::iota_view<W, B>>
 struct mapped<ranges::iota_view<W, B>> {
-    // clang-format on
     template <class>
     using apply = ranges::iota_view<W, B>;
 };
-// clang-format off
 template <class I, class S>
     requires random_access_iterator<I>
 struct mapped<ranges::subrange<I, S, ranges::subrange_kind::sized>> {
-    // clang-format on
     template <class>
     using apply = ranges::subrange<I, S, ranges::subrange_kind::sized>;
 };
 
 template <ranges::viewable_range Rng>
-using mapped_t = typename mapped<remove_cvref_t<Rng>>::template apply<Rng>;
+using mapped_t = mapped<remove_cvref_t<Rng>>::template apply<Rng>;
 
 template <ranges::viewable_range Rng>
 using pipeline_t = mapped_t<mapped_t<mapped_t<mapped_t<Rng>>>>;
 
 template <class Rng>
-concept CanViewDrop = requires(Rng&& r) {
-    views::drop(forward<Rng>(r), 42);
-};
+concept CanViewDrop = requires(Rng&& r) { views::drop(forward<Rng>(r), 42); };
 
 template <ranges::input_range Rng, ranges::random_access_range Expected>
 constexpr bool test_one(Rng&& rng, Expected&& expected) {
@@ -293,6 +286,55 @@ constexpr bool test_one(Rng&& rng, Expected&& expected) {
         }
     }
 
+#if _HAS_CXX23
+    using ranges::const_iterator_t, ranges::const_sentinel_t, ranges::cbegin, ranges::cend;
+
+    // Validate view_interface::cbegin
+    STATIC_ASSERT(CanMemberCBegin<R> == input_range<V>);
+    STATIC_ASSERT(same_as<const_iterator_t<R>, const_iterator_t<V>>);
+    STATIC_ASSERT(CanMemberCBegin<const R&> == (random_access_range<const V> && sized_range<const V>) );
+    if (forward_range<V>) { // intentionally not if constexpr
+        const same_as<const_iterator_t<R>> auto i = r.cbegin();
+        if (!is_empty) {
+            assert(*i == *cbegin(expected));
+        }
+
+        if constexpr (copyable<V>) {
+            auto r2                                    = r;
+            const same_as<const_iterator_t<R>> auto i2 = r2.cbegin();
+            if (!is_empty) {
+                assert(*i2 == *i);
+            }
+        }
+
+        if constexpr (random_access_range<const V> && sized_range<const V>) {
+            STATIC_ASSERT(same_as<const_iterator_t<const R>, const_iterator_t<const V>>);
+            const same_as<const_iterator_t<const R>> auto i3 = as_const(r).cbegin();
+            if (!is_empty) {
+                assert(*i3 == *i);
+            }
+        }
+    }
+
+    // Validate view_interface::cend
+    STATIC_ASSERT(CanMemberCEnd<R> == input_range<V>);
+    STATIC_ASSERT(same_as<const_sentinel_t<R>, const_sentinel_t<V>>);
+    STATIC_ASSERT(CanMemberCEnd<const R&> == (random_access_range<const V> && sized_range<const V>) );
+    if (!is_empty) {
+        same_as<const_sentinel_t<R>> auto i = r.cend();
+        if constexpr (bidirectional_range<R> && common_range<R>) {
+            assert(*prev(i) == *prev(cend(expected)));
+        }
+
+        if constexpr (random_access_range<const V> && sized_range<const V>) {
+            same_as<const_sentinel_t<const R>> auto i2 = as_const(r).cend();
+            if constexpr (bidirectional_range<const R> && common_range<const R>) {
+                assert(*prev(i2) == *prev(cend(expected)));
+            }
+        }
+    }
+#endif // _HAS_CXX23
+
     // Validate view_interface::data
     STATIC_ASSERT(CanMemberData<R> == contiguous_range<V>);
     STATIC_ASSERT(CanData<R&> == contiguous_range<V>);
@@ -338,6 +380,7 @@ constexpr bool test_one(Rng&& rng, Expected&& expected) {
         if constexpr (CanIndex<R>) {
             assert(r[0] == *r.begin());
         }
+
         if constexpr (CanIndex<const R>) {
             assert(as_const(r)[0] == *as_const(r).begin());
         }

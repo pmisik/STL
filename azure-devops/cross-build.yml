@@ -9,26 +9,17 @@ parameters:
   type: string
 - name: vsDevCmdArch
   type: string
-- name: buildOutputLocationVar
-  type: string
-  default: buildOutputLocation
+- name: buildBenchmarks
+  type: boolean
+  default: true
 - name: numShards
   type: number
   default: 8
-- name: buildBenchmarking
-  type: string
-  default: 'ON'
 jobs:
 - job: '${{ parameters.targetPlatform }}'
-  variables:
-    fixedFlags: '--timeout=240;--shuffle'
-    parallelismFlag: '-j$(testParallelism)'
-    xmlOutputFlag: '--xunit-xml-output=$(${{ parameters.buildOutputLocationVar }})/test-results.xml'
-    shardFlags: '--order=lexical;--num-shards=$(System.TotalJobsInPhase);--run-shard=$(System.JobPositionInPhase)'
-    litFlags: '$(fixedFlags);$(parallelismFlag);$(xmlOutputFlag);$(shardFlags)'
   strategy:
     parallel: ${{ parameters.numShards }}
-  timeoutInMinutes: 360
+  timeoutInMinutes: 30
   steps:
   - script: |
       if exist "$(tmpDir)" (rmdir /S /Q $(tmpDir))
@@ -41,11 +32,13 @@ jobs:
       targetPlatform: ${{ parameters.targetPlatform }}
       hostArch: ${{ parameters.hostArch }}
       targetArch: ${{ parameters.vsDevCmdArch }}
-      buildBenchmarking: ${{ parameters.buildBenchmarking }}
       cmakeAdditionalFlags: '-DTESTS_BUILD_ONLY=ON'
+      buildBenchmarks: ${{ parameters.buildBenchmarks }}
   - template: run-tests.yml
     parameters:
       hostArch: ${{ parameters.hostArch }}
       targetPlatform: ${{ parameters.targetPlatform }}
       targetArch: ${{ parameters.vsDevCmdArch }}
       displayName: 'Build Tests'
+      # Exclude "stlasan" test (we don't yet support ASAN on ARM or ARM64)
+      testSelection: '-E stlasan'

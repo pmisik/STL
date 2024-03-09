@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <execution>
 #include <functional>
+#include <memory>
 #include <numeric>
+#include <type_traits>
 #include <vector>
 
 struct bigint {
@@ -44,7 +46,8 @@ void test_ops() {
 
     struct alignas(std::atomic_ref<ValueType>::required_alignment) Padded {
         ValueType vals[unique] = {};
-    } padded;
+    };
+    Padded padded;
 
     auto& vals = padded.vals;
 
@@ -61,7 +64,7 @@ void test_ops() {
     auto load  = [](const std::atomic_ref<ValueType>& ref) { return static_cast<int>(ref.load()); };
     auto xchg0 = [](std::atomic_ref<ValueType>& ref) { return static_cast<int>(ref.exchange(0)); };
 
-    int (*inc)(std::atomic_ref<ValueType> & ref);
+    int (*inc)(std::atomic_ref<ValueType>& ref);
     if constexpr (AddViaCas) {
         inc = [](std::atomic_ref<ValueType>& ref) {
             for (;;) {
@@ -288,6 +291,87 @@ void test_gh_1497() {
         assert(atom_observe.load() == 22);
     }
 }
+
+#ifndef _M_CEE // TRANSITION, VSO-1659496
+// GH-140: STL: We should _STD qualify _Ugly function calls to avoid ADL
+template <class T>
+struct holder {
+    T t;
+};
+
+struct incomplete;
+
+template <class T, class Tag>
+struct tagged_trivial {
+    T t;
+};
+
+template <class T>
+void test_incomplete_associated_class() { // COMPILE-ONLY
+    T o{};
+    std::atomic_ref<T> a{o};
+
+    a = o;
+
+    (void) a.is_lock_free();
+    (void) a.load();
+    (void) a.load(std::memory_order_relaxed);
+    a.store(T{});
+    a.store(T{}, std::memory_order_relaxed);
+    (void) a.exchange(T{});
+    (void) a.exchange(T{}, std::memory_order_relaxed);
+    (void) a.compare_exchange_weak(o, T{});
+    (void) a.compare_exchange_weak(o, T{}, std::memory_order_relaxed);
+    (void) a.compare_exchange_weak(o, T{}, std::memory_order_relaxed, std::memory_order_relaxed);
+    (void) a.compare_exchange_strong(o, T{});
+    (void) a.compare_exchange_strong(o, T{}, std::memory_order_relaxed);
+    (void) a.compare_exchange_strong(o, T{}, std::memory_order_relaxed, std::memory_order_relaxed);
+    a.wait(T{});
+    a.wait(T{}, std::memory_order_relaxed);
+    a.notify_one();
+    a.notify_all();
+
+    if constexpr (std::is_pointer_v<T>) {
+        std::remove_pointer_t<T> pointee{};
+        a = std::addressof(pointee);
+
+        (void) a.operator+=(0); // a += 0 triggers ADL
+        (void) a.operator-=(0); // a -= 0 triggers ADL
+        (void) a.operator++(); // ++a triggers ADL
+        (void) a.operator--(); // --a triggers ADL
+        (void) a.operator++(0); // a++ triggers ADL
+        (void) a.operator--(0); // a-- triggers ADL
+        (void) a.fetch_add(0);
+        (void) a.fetch_add(0, std::memory_order_relaxed);
+        (void) a.fetch_sub(0);
+        (void) a.fetch_sub(0, std::memory_order_relaxed);
+    }
+}
+
+void test_incomplete_associated_class_all() { // COMPILE-ONLY
+    test_incomplete_associated_class<tagged_trivial<uint8_t, holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint16_t, holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint32_t, holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint64_t, holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint64_t[2], holder<incomplete>>>();
+
+    test_incomplete_associated_class<tagged_trivial<uint8_t[3], holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint16_t[3], holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint32_t[3], holder<incomplete>>>();
+    test_incomplete_associated_class<tagged_trivial<uint64_t[3], holder<incomplete>>>();
+
+    test_incomplete_associated_class<tagged_trivial<uint8_t, holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint16_t, holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint32_t, holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint64_t, holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint64_t[2], holder<incomplete>>*>();
+
+    test_incomplete_associated_class<tagged_trivial<uint8_t[3], holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint16_t[3], holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint32_t[3], holder<incomplete>>*>();
+    test_incomplete_associated_class<tagged_trivial<uint64_t[3], holder<incomplete>>*>();
+}
+#endif // ^^^ no workaround ^^^
 
 int main() {
     test_ops<false, char>();

@@ -133,7 +133,6 @@ constexpr bool test_three_way_comparable(std::integer_sequence<int, Is...>) {
 STATIC_ASSERT(test_three_way_comparable(std::make_integer_sequence<int, three_way_archetype_max>{}));
 
 // Validate three_way_comparable_with
-// clang-format off
 
 // 4: not common_reference_with
 // 5: common_reference_t is not three_way_comparable
@@ -179,8 +178,6 @@ template <int I1, class Cat1, int I2, class Cat2>
     requires ((I1 != I2 || !same_as<Cat1, Cat2>) && I1 == 9 && I2 == 9)
 int operator<=>(three_way_archetype<I1, Cat1> const&, three_way_archetype<I2, Cat2> const&);
 
-// clang-format on
-
 constexpr int three_way_with_max = 10;
 
 template <class T, class Cat>
@@ -221,14 +218,10 @@ STATIC_ASSERT(test_three_way_comparable_with(std::make_integer_sequence<int, thr
 
 // Validate static properties of compare_three_way, compare_three_way_result, and compare_three_way_result_t
 template <class T>
-concept is_trait = requires {
-    typename T::type;
-};
+concept is_trait = requires { typename T::type; };
 
 template <class T, class U>
-concept can_three_way = requires(T const& t, U const& u) {
-    t <=> u;
-};
+concept can_three_way = requires(T const& t, U const& u) { t <=> u; };
 
 template <class T, class U, class Cat>
 constexpr bool test_compare_three_way() {
@@ -261,7 +254,9 @@ STATIC_ASSERT(test_compare_three_way<int, long, strong_ordering>());
 STATIC_ASSERT(test_compare_three_way<float, float, partial_ordering>());
 STATIC_ASSERT(test_compare_three_way<float, double, partial_ordering>());
 STATIC_ASSERT(test_compare_three_way<long, double, partial_ordering>());
+#ifndef __EDG__ // TRANSITION, VSO-1898915
 STATIC_ASSERT(test_compare_three_way<bool, int, void>());
+#endif // ^^^ no workaround ^^^
 
 STATIC_ASSERT(test_compare_three_way<some_enum, some_enum, strong_ordering>());
 STATIC_ASSERT(test_compare_three_way<some_enum, int, void>());
@@ -431,7 +426,7 @@ constexpr void ordering_test_cases() {
     test_strongly_ordered(&some_deriveds[0], &some_deriveds[1]);
 #if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1168721
     if (!std::is_constant_evaluated())
-#endif // TRANSITION, VSO-1168721
+#endif // ^^^ workaround ^^^
     {
         test_strongly_ordered(static_cast<base const*>(&some_deriveds[0]), &some_deriveds[1]);
         test_strongly_ordered(&some_deriveds[0], static_cast<base const*>(&some_deriveds[1]));
@@ -453,7 +448,7 @@ constexpr void ordering_test_cases() {
     test_partially_ordered(31.625f, 31.625, partial_ordering::equivalent);
 #if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1062601
     if (!std::is_constant_evaluated())
-#endif // TRANSITION, VSO-1062601
+#endif // ^^^ workaround ^^^
     {
         test_partially_ordered(3.14, NaN, partial_ordering::unordered);
         test_partially_ordered(3.14f, NaN, partial_ordering::unordered);

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#define _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING
+
 #include <array>
 #include <cassert>
 #include <charconv>
@@ -43,9 +45,7 @@
 #include <vector>
 
 template <class T, class U>
-concept HasSpaceshipWith = requires {
-    std::declval<T>() <=> std::declval<U>();
-};
+concept HasSpaceshipWith = requires { std::declval<T>() <=> std::declval<U>(); };
 
 using PartiallyOrdered = double;
 
@@ -181,7 +181,7 @@ inline constexpr bool has_synth_ordered<SynthOrdered> = true;
 template <class Container>
 constexpr void ordered_containers_test(
     const Container& smaller, const Container& smaller_equal, const Container& larger) {
-    using Elem = typename Container::value_type;
+    using Elem = Container::value_type;
 
     if constexpr (has_synth_ordered<Elem>) {
         spaceship_test<std::weak_ordering>(smaller, smaller_equal, larger);
@@ -292,6 +292,11 @@ constexpr bool tuple_like_test() {
     return true;
 }
 
+template <class T>
+struct derived_optional : std::optional<T> {
+    friend bool operator==(const derived_optional&, const derived_optional&) = default;
+};
+
 template <auto SmallVal, decltype(SmallVal) EqualVal, decltype(EqualVal) LargeVal>
 constexpr bool optional_test() {
     using ReturnType = std::compare_three_way_result_t<decltype(SmallVal)>;
@@ -312,8 +317,13 @@ constexpr bool optional_test() {
     }
     {
         constexpr std::optional o1(SmallVal);
+        constexpr derived_optional<decltype(SmallVal)> derived1{std::optional(SmallVal)};
+        constexpr derived_optional<decltype(SmallVal)> derived2{std::optional(LargeVal)};
+
+        static_assert(!std::three_way_comparable<derived_optional<decltype(SmallVal)>>);
 
         assert(spaceship_test<ReturnType>(o1, EqualVal, LargeVal));
+        assert(spaceship_test<ReturnType>(o1, derived1, derived2));
     }
     {
         constexpr std::optional<decltype(SmallVal)> o1(std::nullopt);
@@ -1013,6 +1023,18 @@ void ordering_test_cases() {
         spaceship_test<std::strong_ordering>(p1, p3, p5);
         spaceship_test<std::strong_ordering>(p1, nullptr, p4);
     }
+    { // shared_ptr, heterogeneous
+        std::shared_ptr<const int> p1{};
+        std::shared_ptr<void> p2{};
+        std::shared_ptr<volatile int> p3{};
+
+        std::shared_ptr<int> p4{new int};
+
+        spaceship_test<std::strong_ordering>(p1, p2, p4);
+        spaceship_test<std::strong_ordering>(p1, p3, p4);
+        spaceship_test<std::strong_ordering>(p2, p3, p4);
+        spaceship_test<std::strong_ordering>(p1, nullptr, p4);
+    }
     { // slice
         std::slice a1(2, 3, 4);
         std::slice a2(2, 3, 4);
@@ -1039,9 +1061,9 @@ void ordering_test_cases() {
         spaceship_test<std::partial_ordering>(double_seconds{1}, float_milliseconds{1000}, ntsc_fields{60});
 
         constexpr double_seconds nan_s{std::numeric_limits<double>::quiet_NaN()};
-#ifdef __clang__ // TRANSITION, DevCom-445462
+#if defined(__clang__) || defined(__EDG__) // TRANSITION, DevCom-445462
         static_assert(nan_s <=> nan_s == std::partial_ordering::unordered);
-#endif // defined(__clang__)
+#endif // ^^^ no workaround ^^^
         assert(nan_s <=> nan_s == std::partial_ordering::unordered);
     }
     { // chrono::time_point
@@ -1055,9 +1077,9 @@ void ordering_test_cases() {
         spaceship_test<std::partial_ordering>(sys_tp{}, sys_double_s{}, sys_double_s{double_seconds{1}});
 
         constexpr sys_double_s nan_tp{double_seconds{std::numeric_limits<double>::quiet_NaN()}};
-#ifdef __clang__ // TRANSITION, DevCom-445462
+#if defined(__clang__) || defined(__EDG__) // TRANSITION, DevCom-445462
         static_assert(nan_tp <=> nan_tp == std::partial_ordering::unordered);
-#endif // defined(__clang__)
+#endif // ^^^ no workaround ^^^
         assert(nan_tp <=> nan_tp == std::partial_ordering::unordered);
 
         using steady_tp = std::chrono::steady_clock::time_point;

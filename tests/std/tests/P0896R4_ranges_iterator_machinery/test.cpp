@@ -11,54 +11,33 @@
 #include <utility>
 #include <vector>
 
-#define STATIC_ASSERT(...) static_assert(__VA_ARGS__, #__VA_ARGS__)
-
-namespace ranges = std::ranges;
-
-template <class>
-inline constexpr bool always_false = false;
+#include <range_algorithm_support.hpp>
 
 template <class T>
 using reference_to = T&;
 template <class T>
-concept can_reference = requires {
-    typename reference_to<T>;
-};
+concept can_reference = requires { typename reference_to<T>; };
 
 template <class T, class U = T>
-concept has_eq = requires(T const& t, U const& u) {
-    t == u;
-};
+concept has_eq = requires(T const& t, U const& u) { t == u; };
 
 template <class T, class U = T>
-concept has_neq = requires(T const& t, U const& u) {
-    t != u;
-};
+concept has_neq = requires(T const& t, U const& u) { t != u; };
 
 template <class T, class U = T>
-concept has_less = requires(T const& t, U const& u) {
-    t < u;
-};
+concept has_less = requires(T const& t, U const& u) { t < u; };
 
 template <class T, class U = T>
-concept has_greater = requires(T const& t, U const& u) {
-    t > u;
-};
+concept has_greater = requires(T const& t, U const& u) { t > u; };
 
 template <class T, class U = T>
-concept has_less_eq = requires(T const& t, U const& u) {
-    t <= u;
-};
+concept has_less_eq = requires(T const& t, U const& u) { t <= u; };
 
 template <class T, class U = T>
-concept has_greater_eq = requires(T const& t, U const& u) {
-    t >= u;
-};
+concept has_greater_eq = requires(T const& t, U const& u) { t >= u; };
 
 template <class T, class U = T>
-concept has_difference = requires(T const& t, U const& u) {
-    t - u;
-};
+concept has_difference = requires(T const& t, U const& u) { t - u; };
 
 struct no_such_type; // not defined
 
@@ -97,32 +76,20 @@ struct my_iterator {
 };
 
 template <class T>
-concept has_member_iter_concept = requires {
-    typename T::iterator_concept;
-};
+concept has_member_iter_concept = requires { typename T::iterator_concept; };
 
 template <class T>
-concept has_member_iter_category = requires {
-    typename T::iterator_category;
-};
+concept has_member_iter_category = requires { typename T::iterator_category; };
 
 template <class T>
-concept has_member_value_type = requires {
-    typename T::value_type;
-};
+concept has_member_value_type = requires { typename T::value_type; };
 template <class T>
-concept has_iter_value = requires {
-    typename std::iter_value_t<T>;
-};
+concept has_iter_value = requires { typename std::iter_value_t<T>; };
 
 template <class T>
-concept has_member_difference_type = requires {
-    typename T::difference_type;
-};
+concept has_member_difference_type = requires { typename T::difference_type; };
 template <class T>
-concept has_iter_diff = requires {
-    typename std::iter_difference_t<T>;
-};
+concept has_iter_diff = requires { typename std::iter_difference_t<T>; };
 
 template <class T>
 struct arrow_base {
@@ -232,6 +199,56 @@ struct std::indirectly_readable_traits<simple_contiguous_iter<Base>> {
     using value_type = double;
 };
 
+// Validate iterator_category of iterators whose reference types are rvalue references (LWG-3798).
+struct xvalue_forward_iter {
+    using value_type      = double;
+    using difference_type = long;
+
+    value_type&& operator*() const;
+    xvalue_forward_iter& operator++();
+    xvalue_forward_iter operator++(int);
+
+    bool operator==(xvalue_forward_iter const&) const = default;
+};
+
+struct xvalue_bidi_iter {
+    using value_type      = double;
+    using difference_type = long;
+    using reference       = value_type&&;
+
+    value_type&& operator*() const;
+    xvalue_bidi_iter& operator++();
+    xvalue_bidi_iter operator++(int);
+
+    bool operator==(xvalue_bidi_iter const&) const = default;
+
+    xvalue_bidi_iter& operator--();
+    xvalue_bidi_iter operator--(int);
+};
+
+struct xvalue_random_iter {
+    using value_type = double;
+    using D          = long;
+
+    value_type&& operator*() const;
+    xvalue_random_iter& operator++();
+    xvalue_random_iter operator++(int);
+
+    xvalue_random_iter& operator--();
+    xvalue_random_iter operator--(int);
+
+    bool operator==(xvalue_random_iter const&) const;
+    std::strong_ordering operator<=>(xvalue_random_iter const&) const;
+
+    value_type&& operator[](D) const;
+    xvalue_random_iter& operator-=(D);
+    xvalue_random_iter operator-(D) const;
+    D operator-(xvalue_random_iter const&) const;
+    xvalue_random_iter& operator+=(D);
+    xvalue_random_iter operator+(D) const;
+    friend xvalue_random_iter operator+(D, xvalue_random_iter const&);
+};
+
 template <int I>
 struct proxy_iterator {
     using difference_type = int;
@@ -318,7 +335,8 @@ inline constexpr std::size_t destructible_archetype_max = 1;
 
 template <std::size_t I>
 struct semiregular_archetype : destructible_archetype<I> {
-    semiregular_archetype() requires(I != 5);
+    semiregular_archetype()
+        requires (I != 5);
     COPYABLE_OPS(semiregular);
 };
 
@@ -367,7 +385,8 @@ inline constexpr std::size_t weakly_incrementable_archetype_max = 11;
 template <std::size_t I>
 struct incrementable_archetype : weakly_incrementable_archetype<I>,
                                  increment_ops<I, incrementable_archetype<I>, incrementable_archetype<I>> {
-    incrementable_archetype() requires(I != 11);
+    incrementable_archetype()
+        requires (I != 11);
     COPYABLE_OPS(incrementable);
     using increment_ops<I, incrementable_archetype<I>, incrementable_archetype<I>>::operator++;
 
@@ -397,25 +416,24 @@ inline constexpr std::size_t iterator_archetype_max = 12;
 
 template <std::size_t I>
 struct sentinel_archetype : semiregular_archetype<I> {
-    sentinel_archetype() requires(I != 5);
+    sentinel_archetype()
+        requires (I != 5);
     COPYABLE_OPS(sentinel);
 
-    // clang-format off
     template <std::size_t J>
         requires (I != 6)
     bool operator==(iterator_archetype<J> const&) const;
-    // clang-format on
 };
 
 inline constexpr std::size_t sentinel_archetype_max = 7;
 
 template <std::size_t I>
 struct sized_sentinel_archetype : sentinel_archetype<I> {
-    sized_sentinel_archetype() requires(I != 5);
+    sized_sentinel_archetype()
+        requires (I != 5);
     COPYABLE_OPS(sized_sentinel);
 };
 
-// clang-format off
 template <std::size_t I, std::size_t J>
     requires (I == 8)
 double operator-(sized_sentinel_archetype<I> const&, iterator_archetype<J> const&);
@@ -433,7 +451,6 @@ template <std::size_t I, std::size_t J>
     requires (I < 9 || I >= 11)
 std::iter_difference_t<iterator_archetype<J>> operator-(
     iterator_archetype<J> const&, sized_sentinel_archetype<I> const&);
-// clang-format on
 
 template <class I>
 inline constexpr bool std::disable_sized_sentinel_for<sized_sentinel_archetype<11>, I> = true;
@@ -498,7 +515,8 @@ inline constexpr std::size_t input_iterator_archetype_max = 16;
 template <std::size_t I>
 struct forward_iterator_archetype : input_iterator_archetype<I>,
                                     increment_ops<I, forward_iterator_archetype<I>, forward_iterator_archetype<I>> {
-    forward_iterator_archetype() requires(I != 16);
+    forward_iterator_archetype()
+        requires (I != 16);
     COPYABLE_OPS(forward_iterator);
     using increment_ops<I, forward_iterator_archetype<I>, forward_iterator_archetype<I>>::operator++;
 
@@ -524,7 +542,8 @@ template <std::size_t I>
 struct bidi_iterator_archetype : forward_iterator_archetype<I>,
                                  increment_ops<I, bidi_iterator_archetype<I>, bidi_iterator_archetype<I>>,
                                  decrement_ops<I, bidi_iterator_archetype<I>> {
-    bidi_iterator_archetype() requires(I != 16);
+    bidi_iterator_archetype()
+        requires (I != 16);
     COPYABLE_OPS(bidi_iterator);
     using increment_ops<I, bidi_iterator_archetype<I>, bidi_iterator_archetype<I>>::operator++;
 };
@@ -535,7 +554,8 @@ template <std::size_t I>
 struct random_iterator_archetype : bidi_iterator_archetype<I>,
                                    increment_ops<I, random_iterator_archetype<I>, random_iterator_archetype<I>>,
                                    decrement_ops<I, random_iterator_archetype<I>> {
-    random_iterator_archetype() requires(I != 16);
+    random_iterator_archetype()
+        requires (I != 16);
     COPYABLE_OPS(random_iterator);
     using increment_ops<I, random_iterator_archetype<I>, random_iterator_archetype<I>>::operator++;
     using decrement_ops<I, random_iterator_archetype<I>>::operator--;
@@ -565,11 +585,9 @@ struct contig_iterator_archetype_types : random_iterator_archetype<I> {
     using iterator_concept  = std::contiguous_iterator_tag;
     using iterator_category = std::random_access_iterator_tag;
 };
-// clang-format off
 template <std::size_t I>
     requires (I == 14 || I == 15 || I == 31)
 struct contig_iterator_archetype_types<I> : random_iterator_archetype<I> {};
-// clang-format on
 template <>
 struct contig_iterator_archetype_types<32> : random_iterator_archetype<32> {
     using iterator_category = std::random_access_iterator_tag;
@@ -584,7 +602,8 @@ template <std::size_t I>
 struct contig_iterator_archetype : increment_ops<I, contig_iterator_archetype<I>, contig_iterator_archetype<I>>,
                                    decrement_ops<I, contig_iterator_archetype<I>>,
                                    contig_iterator_archetype_types<I> {
-    contig_iterator_archetype() requires(I != 16);
+    contig_iterator_archetype()
+        requires (I != 16);
     COPYABLE_OPS(contig_iterator);
     using increment_ops<I, contig_iterator_archetype<I>, contig_iterator_archetype<I>>::operator++;
     using decrement_ops<I, contig_iterator_archetype<I>>::operator--;
@@ -616,7 +635,7 @@ inline constexpr std::size_t contig_iterator_archetype_max = 34;
 #pragma warning(pop)
 
 struct iter_concept_example {
-    // bidirectional_iterator and Cpp17InputIterator, but not Cpp17ForwardIterator (N4820 [iterator.concepts.general]/2)
+    // bidirectional_iterator and Cpp17InputIterator, but not Cpp17ForwardIterator (N4928 [iterator.concepts.general]/2)
 
     using value_type      = int;
     using difference_type = int;
@@ -638,9 +657,7 @@ namespace iterator_synopsis_test {
 
     // Validate iter_reference_t
     template <class T>
-    concept can_iter_ref = requires {
-        typename iter_reference_t<T>;
-    };
+    concept can_iter_ref = requires { typename iter_reference_t<T>; };
 
     STATIC_ASSERT(!can_iter_ref<int>);
     STATIC_ASSERT(!can_iter_ref<void>);
@@ -892,43 +909,45 @@ namespace iterator_traits_test {
         return true;
     }
 
-    // N4820 [iterator.traits]/3.2: "Otherwise, if I satisfies the exposition-only concept cpp17-input-iterator..."
+    // N4928 [iterator.traits]/3.2: "Otherwise, if I satisfies the exposition-only concept cpp17-input-iterator..."
 
-    // N4820 [iterator.traits]:
+    // N4928 [iterator.traits]:
     // * 3.2.1: "... Otherwise, pointer names void."
     // * 3.2.2: "... Otherwise, reference names iter_reference_t<I>."
     // * 3.2.3.4 "... Otherwise, iterator_category names... input_iterator_tag."
     STATIC_ASSERT(check<simple_input_iter, no_such_type, input_iterator_tag, double, long, void, double>());
 
-    // N4820 [iterator.traits]:
+    // N4928 [iterator.traits]:
     // * 3.2.1: "... Otherwise, pointer names void."
     // * 3.2.2: "... Otherwise, reference names iter_reference_t<I>."
     // * 3.2.3.3 "... Otherwise, iterator_category names... forward_iterator_tag if I satisfies cpp17-forward-iterator."
     STATIC_ASSERT(
         check<simple_forward_iter<>, no_such_type, forward_iterator_tag, double, long, void, double const&>());
-    // N4820 [iterator.traits]/3.2.1: "... Otherwise, if decltype(declval<I&>().operator->()) is well-formed, then
+    STATIC_ASSERT(check<xvalue_forward_iter, no_such_type, forward_iterator_tag, double, long, void, double&&>());
+    // N4928 [iterator.traits]/3.2.1: "... Otherwise, if decltype(declval<I&>().operator->()) is well-formed, then
     // pointer names that type."
     STATIC_ASSERT(check<simple_forward_iter<arrow_base<double const*>>, no_such_type, forward_iterator_tag, double,
         long, double const*, double const&>());
-    // N4820 [iterator.traits]/3.2.3: "If the qualified-id I::iterator_category is valid and denotes a type,
+    // N4928 [iterator.traits]/3.2.3: "If the qualified-id I::iterator_category is valid and denotes a type,
     // iterator_category names that type."
     STATIC_ASSERT(check<simple_forward_iter<with_iter_cat<output_iterator_tag>>, no_such_type, output_iterator_tag,
         double, long, void, double const&>());
     STATIC_ASSERT(check<simple_forward_iter<with_iter_cat<input_iterator_tag>>, no_such_type, input_iterator_tag,
         double, long, void, double const&>());
 
-    // N4820 [iterator.traits]:
+    // N4928 [iterator.traits]:
     // * 3.2.1: "... Otherwise, pointer names void."
     // * 3.2.2: "If the qualified-id I::reference is valid and denotes a type, reference names that type."
     // * 3.2.3.2 "... Otherwise, iterator_category names... bidirectional_iterator_tag if I satisfies
     // cpp17-bidirectional-iterator."
     STATIC_ASSERT(
         check<simple_bidi_iter<>, no_such_type, bidirectional_iterator_tag, double, long, void, double const&>());
-    // N4820 [iterator.traits]/3.2.1: "... Otherwise, if decltype(declval<I&>().operator->()) is well-formed, then
+    STATIC_ASSERT(check<xvalue_bidi_iter, no_such_type, bidirectional_iterator_tag, double, long, void, double&&>());
+    // N4928 [iterator.traits]/3.2.1: "... Otherwise, if decltype(declval<I&>().operator->()) is well-formed, then
     // pointer names that type."
     STATIC_ASSERT(check<simple_bidi_iter<arrow_base<double const*>>, no_such_type, bidirectional_iterator_tag, double,
         long, double const*, double const&>());
-    // N4820 [iterator.traits]/3.2.3: "If the qualified-id I::iterator_category is valid and denotes a type,
+    // N4928 [iterator.traits]/3.2.3: "If the qualified-id I::iterator_category is valid and denotes a type,
     // iterator_category names that type."
     STATIC_ASSERT(check<simple_bidi_iter<with_iter_cat<output_iterator_tag>>, no_such_type, output_iterator_tag, double,
         long, void, double const&>());
@@ -937,22 +956,23 @@ namespace iterator_traits_test {
     STATIC_ASSERT(check<simple_bidi_iter<with_iter_cat<forward_iterator_tag>>, no_such_type, forward_iterator_tag,
         double, long, void, double const&>());
 
-    // N4820 [iterator.traits]:
+    // N4928 [iterator.traits]:
     // * 3.2.1: "... Otherwise, pointer names void."
     // * 3.2.2: "... Otherwise, reference names iter_reference_t<I>."
     // * 3.2.3.1 "... Otherwise, iterator_category names... random_access_iterator_tag if I satisfies
     // cpp17-random-access-iterator."
     STATIC_ASSERT(
         check<simple_random_iter<>, no_such_type, random_access_iterator_tag, double, long, void, double const&>());
+    STATIC_ASSERT(check<xvalue_random_iter, no_such_type, random_access_iterator_tag, double, long, void, double&&>());
     STATIC_ASSERT(
         check<simple_contiguous_iter<>, no_such_type, random_access_iterator_tag, double, long, void, double const&>());
-    // N4820 [iterator.traits]/3.2.1: "... Otherwise, if decltype(declval<I&>().operator->()) is well-formed, then
+    // N4928 [iterator.traits]/3.2.1: "... Otherwise, if decltype(declval<I&>().operator->()) is well-formed, then
     // pointer names that type."
     STATIC_ASSERT(check<simple_random_iter<arrow_base<double const*>>, no_such_type, random_access_iterator_tag, double,
         long, double const*, double const&>());
     STATIC_ASSERT(check<simple_contiguous_iter<arrow_base<double const*>>, no_such_type, random_access_iterator_tag,
         double, long, double const*, double const&>());
-    // N4820 [iterator.traits]/3.2.3: "If the qualified-id I::iterator_category is valid and denotes a type,
+    // N4928 [iterator.traits]/3.2.3: "If the qualified-id I::iterator_category is valid and denotes a type,
     // iterator_category names that type."
     STATIC_ASSERT(check<simple_random_iter<with_iter_cat<output_iterator_tag>>, no_such_type, output_iterator_tag,
         double, long, void, double const&>());
@@ -971,7 +991,7 @@ namespace iterator_traits_test {
     STATIC_ASSERT(check<simple_contiguous_iter<with_iter_cat<contiguous_iterator_tag>>, no_such_type,
         contiguous_iterator_tag, double, long, void, double const&>());
 
-    // N4820 [iterator.traits]/3.3: "Otherwise, if I satisfies the exposition-only concept cpp17-iterator..."
+    // N4928 [iterator.traits]/3.3: "Otherwise, if I satisfies the exposition-only concept cpp17-iterator..."
     template <class Base = empty_type>
     struct simple_output_iter : Base {
         simple_output_iter const& operator*() const;
@@ -985,13 +1005,13 @@ namespace iterator_traits_test {
     // "... otherwise, it names void."
     STATIC_ASSERT(check<simple_output_iter<>, no_such_type, output_iterator_tag, void, void, void, void>());
 
-    // N4820 [iterator.traits]/3.4: "Otherwise, iterator_traits has no members by any of the above names."
+    // N4928 [iterator.traits]/3.4: "Otherwise, iterator_traits<I> has no members by any of the above names."
     STATIC_ASSERT(has_empty_traits<int>);
     STATIC_ASSERT(has_empty_traits<void>);
     STATIC_ASSERT(has_empty_traits<int(int)>);
     STATIC_ASSERT(has_empty_traits<int(int) const>);
 
-    // N4820 [iterator.traits]/5: "iterator_traits is specialized for pointers..."
+    // N4928 [iterator.traits]/5: "iterator_traits is specialized for pointers..."
     STATIC_ASSERT(check<int*, contiguous_iterator_tag, random_access_iterator_tag, int, std::ptrdiff_t, int*, int&>());
     STATIC_ASSERT(check<int const*, contiguous_iterator_tag, random_access_iterator_tag, int, std::ptrdiff_t,
         int const*, int const&>());
@@ -1008,15 +1028,12 @@ namespace iterator_cust_move_test {
     using std::iter_rvalue_reference_t, std::same_as;
 
     template <class T>
-    concept can_iter_move = requires(T&& t) {
-        ranges::iter_move(std::forward<T>(t));
-    };
+    concept can_iter_move = requires(T&& t) { ranges::iter_move(std::forward<T>(t)); };
     template <class T>
-    concept can_iter_rvalue_ref = requires {
-        typename iter_rvalue_reference_t<T>;
-    };
+    concept can_iter_rvalue_ref = requires { typename iter_rvalue_reference_t<T>; };
 
-    // N4820 [iterator.cust.move]/1.1 "iter_move(E), if that expression is valid, with overload resolution..."
+    // N4928 [iterator.cust.move]/1.1 "iter_move(E), if [...] iter_move(E) is a well-formed expression when [...]
+    // performing argument-dependent lookup only."
     struct friend_hook {
         friend constexpr double iter_move(friend_hook) noexcept {
             return 3.14;
@@ -1045,7 +1062,7 @@ namespace iterator_cust_move_test {
     STATIC_ASSERT(static_cast<int>(ranges::iter_move(E1::x)) == 0);
     STATIC_ASSERT(noexcept(ranges::iter_move(E1::x)));
 
-    // N4820 [iterator.cust.move]/1.2.1 "if *E is an lvalue, std::move(*E)"
+    // N4928 [iterator.cust.move]/1.2.1 "if *E is an lvalue, std::move(*E)"
     static constexpr int some_ints[] = {0, 1, 2, 3};
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<int*>, int&&>);
     STATIC_ASSERT(ranges::iter_move(&some_ints[1]) == 1);
@@ -1060,7 +1077,7 @@ namespace iterator_cust_move_test {
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<int(int)>, int (&)(int)>);
 #else // ^^^ no workaround / workaround vvv
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<int(int)>, int (*)(int)>);
-#endif // TRANSITION, VSO-1008447
+#endif // ^^^ workaround ^^^
 
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<int[4]>, int&&>);
     STATIC_ASSERT(ranges::iter_move(some_ints) == 0);
@@ -1073,7 +1090,7 @@ namespace iterator_cust_move_test {
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<int (*)(int)>, int (&)(int)>);
 #else // ^^^ no workaround / workaround vvv
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<int (*)(int)>, int (&&)(int)>);
-#endif // TRANSITION, VSO-1008447
+#endif // ^^^ workaround ^^^
     STATIC_ASSERT(ranges::iter_move (&f)(42) == 43);
     STATIC_ASSERT(noexcept(ranges::iter_move(&f)));
 
@@ -1092,7 +1109,7 @@ namespace iterator_cust_move_test {
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<with_bogus_typedefs>, int const&&>); // oblivious to nested types
     STATIC_ASSERT(ranges::iter_move(with_bogus_typedefs{}) == 1);
 
-    // N4820 [iterator.cust.move]/1.2.2 "otherwise, *E."
+    // N4928 [iterator.cust.move]/1.2.2 "otherwise, *E."
     struct ref_is_prvalue {
         int operator*() const {
             return 42;
@@ -1106,7 +1123,7 @@ namespace iterator_cust_move_test {
     STATIC_ASSERT(same_as<iter_rvalue_reference_t<ref_is_xvalue>, int&&>);
     STATIC_ASSERT(!noexcept(ranges::iter_move(ref_is_xvalue{})));
 
-    // N4820 [iterator.cust.move]/1.3 "Otherwise, ranges::iter_move(E) is ill-formed."
+    // N4928 [iterator.cust.move]/1.3 "Otherwise, ranges::iter_move(E) is ill-formed."
     STATIC_ASSERT(!can_iter_move<int>);
     STATIC_ASSERT(!can_iter_move<void>);
     STATIC_ASSERT(!can_iter_move<int(int) const>);
@@ -1121,19 +1138,16 @@ namespace iterator_cust_swap_test {
         std::same_as, std::swappable_with;
 
     template <class T, class U>
-    concept can_iter_swap = requires(T&& t, U&& u) {
-        ranges::iter_swap(std::forward<T>(t), std::forward<U>(u));
-    };
+    concept can_iter_swap = requires(T&& t, U&& u) { ranges::iter_swap(std::forward<T>(t), std::forward<U>(u)); };
 
-    // N4820 [iterator.cust.swap]/4.1: "(void)iter_swap(E1, E2), if that expression is valid, with..."
+    // N4928 [iterator.cust.swap]/4.1: "(void)iter_swap(E1, E2), if [...] iter_swap(E1, E2) is a
+    // well-formed expression with overload resolution performed in a context [...]"
     namespace adl_barrier {
         template <class T, class U>
         void iter_swap(T, U) = delete;
 
         template <class T, class U = T>
-        concept bullet1 = requires(T&& t, U&& u) {
-            iter_swap(std::forward<T>(t), std::forward<U>(u));
-        };
+        concept bullet1 = requires(T&& t, U&& u) { iter_swap(std::forward<T>(t), std::forward<U>(u)); };
     } // namespace adl_barrier
     using adl_barrier::bullet1;
 
@@ -1161,13 +1175,12 @@ namespace iterator_cust_swap_test {
     STATIC_ASSERT(bullet1<E1>);
     STATIC_ASSERT((ranges::iter_swap(E1::x, E1::x), true));
 
-    // N4849 [iterator.cust.swap]/4.2: "Otherwise if the types of E1 and E2 each model indirectly_readable, and if the
-    // reference types of E1 and E2 model swappable_with, then ranges::swap(*E1, *E2)."
-    // clang-format off
+    // N4928 [iterator.cust.swap]/4.2: "Otherwise, if the types of E1 and E2 each model indirectly_readable,
+    // and if the reference types of E1 and E2 model swappable_with, then ranges::swap(*E1, *E2)."
     template <class T, class U = T>
-    concept bullet2 = !bullet1<T, U> && indirectly_readable<remove_reference_t<T>>
-        && indirectly_readable<remove_reference_t<U>> && swappable_with<iter_reference_t<T>, iter_reference_t<U>>;
-    // clang-format on
+    concept bullet2 =
+        !bullet1<T, U> && indirectly_readable<remove_reference_t<T>> && indirectly_readable<remove_reference_t<U>>
+        && swappable_with<iter_reference_t<T>, iter_reference_t<U>>;
 
     constexpr bool test() {
         // This test notably executes both at runtime and at compiletime.
@@ -1212,7 +1225,7 @@ namespace iterator_cust_swap_test {
     STATIC_ASSERT((ranges::iter_swap(swap_proxy_readable<0>{}, swap_proxy_readable<1>{}), true));
     STATIC_ASSERT(noexcept(ranges::iter_swap(swap_proxy_readable<0>{}, swap_proxy_readable<1>{})));
 
-    // N4820 [iterator.cust.swap]/4.3: "Otherwise, if the types T1 and T2 of E1 and E2 model
+    // N4928 [iterator.cust.swap]/4.3: "Otherwise, if the types T1 and T2 of E1 and E2 model
     // indirectly_movable_storable<T1, T2> and indirectly_movable_storable<T2, T1>..."
     // clang-format off
     template <class T, class U = T>
@@ -1238,7 +1251,7 @@ namespace iterator_cust_swap_test {
     STATIC_ASSERT(same_as<decltype(ranges::iter_swap(unswap_proxy_readable<0>{}, unswap_proxy_readable<1>{})), void>);
     STATIC_ASSERT(noexcept(ranges::iter_swap(unswap_proxy_readable<0>{}, unswap_proxy_readable<1>{})));
 
-    // N4820 [iterator.cust.swap]/4.4: "Otherwise, ranges::iter_swap(E1, E2) is ill-formed."
+    // N4928 [iterator.cust.swap]/4.4: "Otherwise, ranges::iter_swap(E1, E2) is ill-formed."
     template <class T, class U>
     concept bullet4 = !can_iter_swap<T, U>;
 
@@ -1401,7 +1414,8 @@ namespace iterator_concept_writable_test {
             operator int() const;
             reference& operator=(int);
 
-            reference const& operator=(int) const requires HasConstAssign;
+            reference const& operator=(int) const
+                requires HasConstAssign;
         };
 
         reference operator*() const;
@@ -1426,7 +1440,9 @@ namespace iterator_concept_winc_test {
     constexpr bool test(std::index_sequence<Is...>) {
         STATIC_ASSERT(
             std::same_as<std::index_sequence<Is...>, std::make_index_sequence<weakly_incrementable_archetype_max>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         STATIC_ASSERT((!weakly_incrementable<weakly_incrementable_archetype<Is>> && ...));
+#endif // ^^^ no workaround ^^^
         STATIC_ASSERT(weakly_incrementable<weakly_incrementable_archetype<weakly_incrementable_archetype_max>>);
         return true;
     }
@@ -1465,7 +1481,9 @@ namespace iterator_concept_iterator_test {
     template <std::size_t... Is>
     constexpr bool test(std::index_sequence<Is...>) {
         STATIC_ASSERT(std::same_as<std::index_sequence<Is...>, std::make_index_sequence<iterator_archetype_max>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         STATIC_ASSERT((!input_or_output_iterator<iterator_archetype<Is>> && ...));
+#endif // ^^^ no workaround ^^^
         STATIC_ASSERT(input_or_output_iterator<iterator_archetype<iterator_archetype_max>>);
         return true;
     }
@@ -1495,8 +1513,10 @@ namespace iterator_concept_sentinel_test {
 
     template <std::size_t I, std::size_t J>
     constexpr bool test_one_pair() {
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         constexpr bool expected = I >= sentinel_archetype_max && J >= iterator_archetype_max;
         STATIC_ASSERT(sentinel_for<sentinel_archetype<I>, iterator_archetype<J>> == expected);
+#endif // ^^^ no workaround ^^^
         return true;
     }
 
@@ -1523,8 +1543,10 @@ namespace iterator_concept_sizedsentinel_test {
 
     template <std::size_t I, std::size_t J>
     constexpr bool test_one_pair() {
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         constexpr bool expected = I >= sized_sentinel_archetype_max && J >= iterator_archetype_max;
         STATIC_ASSERT(sized_sentinel_for<sized_sentinel_archetype<I>, iterator_archetype<J>> == expected);
+#endif // ^^^ no workaround ^^^
         return true;
     }
 
@@ -1550,7 +1572,9 @@ namespace iterator_concept_input_test {
     template <std::size_t... Is>
     constexpr bool test(std::index_sequence<Is...>) {
         STATIC_ASSERT(std::same_as<std::index_sequence<Is...>, std::make_index_sequence<input_iterator_archetype_max>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         STATIC_ASSERT((!input_iterator<input_iterator_archetype<Is>> && ...));
+#endif // ^^^ no workaround ^^^
         STATIC_ASSERT(input_iterator<input_iterator_archetype<input_iterator_archetype_max>>);
         return true;
     }
@@ -1573,10 +1597,12 @@ namespace iterator_concept_output_test {
     constexpr bool test(std::index_sequence<Is...>) {
         STATIC_ASSERT(
             std::same_as<std::index_sequence<Is...>, std::make_index_sequence<output_iterator_archetype_max>>);
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         STATIC_ASSERT((!output_iterator<output_iterator_archetype<Is>, int> && ...));
         STATIC_ASSERT((!output_iterator<output_iterator_archetype<Is>, int const> && ...));
         STATIC_ASSERT((!output_iterator<output_iterator_archetype<Is>, int&> && ...));
         STATIC_ASSERT((!output_iterator<output_iterator_archetype<Is>, int const&> && ...));
+#endif // ^^^ no workaround ^^^
         STATIC_ASSERT(output_iterator<output_iterator_archetype<output_iterator_archetype_max>, int>);
         STATIC_ASSERT(output_iterator<output_iterator_archetype<output_iterator_archetype_max>, int const>);
         STATIC_ASSERT(output_iterator<output_iterator_archetype<output_iterator_archetype_max>, int&>);
@@ -1699,6 +1725,58 @@ namespace incomplete_test {
     using V = std::iter_value_t<E*>;
     using D = std::iter_difference_t<E*>;
     using R = std::iter_reference_t<E*>;
+
+#ifndef _M_CEE // TRANSITION, VSO-1659496
+    // GH-1596: "<algorithm>: unqualified calls to _Adl_verify_range incorrectly cause instantiation"
+
+    template <class Tag>
+    struct tagged_base {};
+
+    template <class Tag>
+    struct tagged_derived : tagged_base<Tag> {};
+
+    template <class T>
+    struct holder {
+        T t;
+    };
+
+    struct incomplete;
+
+    void test_adl_proof_ranges_advance_distance() { // COMPILE-ONLY
+        using std::ranges::advance, std::ranges::distance;
+        using validating_base    = tagged_base<holder<incomplete>>;
+        using validating_derived = tagged_derived<holder<incomplete>>;
+
+        struct validating_empty_range {
+            constexpr validating_derived* begin() const noexcept {
+                return ptr_;
+            }
+            constexpr validating_base* end() const noexcept {
+                return ptr_;
+            }
+
+            validating_derived* ptr_;
+        };
+
+        static_assert(std::sentinel_for<validating_base*, validating_derived*>);
+#ifndef __EDG__ // TRANSITION, DevCom-10581519
+        static_assert(!std::sized_sentinel_for<validating_base*, validating_derived*>);
+#endif // ^^^ no workaround ^^^
+
+        validating_derived darr[1]{};
+        validating_derived* const pd = +darr;
+        validating_base* const pb    = +darr;
+        auto pd_mut                  = pd;
+        const validating_empty_range r{+darr};
+
+        (void) advance(pd_mut, 0);
+        (void) advance(pd_mut, pb);
+        (void) advance(pd_mut, 0, pb);
+
+        (void) distance(pd, pb);
+        (void) distance(r);
+    }
+#endif // ^^^ no workaround ^^^
 } // namespace incomplete_test
 
 namespace default_sentinel_test {
@@ -1741,7 +1819,6 @@ namespace unreachable_sentinel_test {
     STATIC_ASSERT(std::is_nothrow_copy_assignable_v<unreachable_sentinel_t>);
     STATIC_ASSERT(std::is_nothrow_move_assignable_v<unreachable_sentinel_t>);
 
-    // clang-format off
     template <class T>
     concept Comparable = requires(T const& t) {
         { t == unreachable_sentinel } -> std::same_as<bool>;
@@ -1749,7 +1826,6 @@ namespace unreachable_sentinel_test {
         { unreachable_sentinel == t } -> std::same_as<bool>;
         { unreachable_sentinel != t } -> std::same_as<bool>;
     };
-    // clang-format on
 
     STATIC_ASSERT(Comparable<int>);
 
@@ -1774,7 +1850,9 @@ namespace unreachable_sentinel_test {
         STATIC_ASSERT(42 != unreachable_sentinel);
         STATIC_ASSERT(noexcept(42 != unreachable_sentinel));
 
+#ifndef _M_CEE // TRANSITION, VSO-1665674
         STATIC_ASSERT((!Comparable<weakly_incrementable_archetype<Is>> && ...));
+#endif // ^^^ no workaround ^^^
         STATIC_ASSERT(Comparable<weakly_incrementable_archetype<weakly_incrementable_archetype_max>>);
 
         return true;
@@ -1825,10 +1903,13 @@ namespace unwrap_move_only {
         bool operator==(std::default_sentinel_t const&) const noexcept;
 
         static constexpr bool _Unwrap_when_unverified = true;
-        iter<T, false> _Unwrapped() && noexcept requires IsWrapped;
-        void _Seek_to(iter<T, false>) noexcept requires IsWrapped;
+        iter<T, false> _Unwrapped() && noexcept
+            requires IsWrapped;
+        void _Seek_to(iter<T, false>) noexcept
+            requires IsWrapped;
 
-        void _Verify_offset(std::ptrdiff_t) const noexcept requires IsWrapped;
+        void _Verify_offset(std::ptrdiff_t) const noexcept
+            requires IsWrapped;
     };
     STATIC_ASSERT(std::input_iterator<iter<int, true>>);
     STATIC_ASSERT(!has_member_iter_category<std::iterator_traits<iter<int, true>>>);
@@ -1862,15 +1943,15 @@ namespace iter_ops {
         std::random_access_iterator_tag;
 
     struct trace {
-        unsigned int compares_;
-        unsigned int differences_;
-        unsigned int increments_;
-        unsigned int decrements_;
-        unsigned int assignments_;
-        unsigned int seeks_;
-        unsigned int sizes_;
-        unsigned int begins_;
-        unsigned int ends_;
+        unsigned int compares_    = 0;
+        unsigned int differences_ = 0;
+        unsigned int increments_  = 0;
+        unsigned int decrements_  = 0;
+        unsigned int assignments_ = 0;
+        unsigned int seeks_       = 0;
+        unsigned int sizes_       = 0;
+        unsigned int begins_      = 0;
+        unsigned int ends_        = 0;
 
         bool operator==(trace const&) const = default;
     };
@@ -1896,11 +1977,14 @@ namespace iter_ops {
         constexpr explicit trace_iterator(int const pos, trace& t) noexcept(NoThrow == nothrow::yes)
             : trace_{&t}, pos_{pos} {}
 
+        // clang-format off
         trace_iterator(trace_iterator const&) requires is_forward = default;
-        trace_iterator(trace_iterator&&)                          = default;
+        // clang-format on
+        trace_iterator(trace_iterator&&) = default;
 
-        constexpr trace_iterator& operator=(trace_iterator const& that) noexcept(
-            NoThrow == nothrow::yes) requires is_forward {
+        constexpr trace_iterator& operator=(trace_iterator const& that) noexcept(NoThrow == nothrow::yes)
+            requires is_forward
+        {
             if (!trace_) {
                 trace_ = that.trace_;
             }
@@ -1917,14 +2001,13 @@ namespace iter_ops {
             return *this;
         }
 
-        // clang-format off
         constexpr trace_iterator& operator=(default_sentinel_t) noexcept(NoThrow == nothrow::yes)
-            requires (Assign == assign::yes) {
+            requires (Assign == assign::yes)
+        {
             ++trace_->assignments_;
             pos_ = sentinel_position;
             return *this;
         }
-        // clang-format on
 
         int operator*() const noexcept(NoThrow == nothrow::yes);
 
@@ -1939,45 +2022,59 @@ namespace iter_ops {
             ++trace_->compares_;
             return pos_ == sentinel_position;
         }
-        constexpr int operator-(default_sentinel_t) const noexcept(NoThrow == nothrow::yes) requires is_sized {
+        constexpr int operator-(default_sentinel_t) const noexcept(NoThrow == nothrow::yes)
+            requires is_sized
+        {
             ++trace_->differences_;
             return pos_ - sentinel_position;
         }
-        friend constexpr int operator-(default_sentinel_t, trace_iterator const& i) noexcept(
-            NoThrow == nothrow::yes) requires is_sized {
+        friend constexpr int operator-(default_sentinel_t, trace_iterator const& i) noexcept(NoThrow == nothrow::yes)
+            requires is_sized
+        {
             return -(i - default_sentinel);
         }
 
-        constexpr bool operator==(trace_iterator const& that) const
-            noexcept(NoThrow == nothrow::yes) requires is_forward {
+        constexpr bool operator==(trace_iterator const& that) const noexcept(NoThrow == nothrow::yes)
+            requires is_forward
+        {
             ++trace_->compares_;
             return pos_ == that.pos_;
         }
 
-        constexpr trace_iterator& operator--() noexcept(NoThrow == nothrow::yes) requires is_bidi {
+        constexpr trace_iterator& operator--() noexcept(NoThrow == nothrow::yes)
+            requires is_bidi
+        {
             ++trace_->decrements_;
             --pos_;
             return *this;
         }
-        trace_iterator operator--(int) noexcept(NoThrow == nothrow::yes) requires is_bidi;
+        trace_iterator operator--(int) noexcept(NoThrow == nothrow::yes)
+            requires is_bidi;
 
-        std::strong_ordering operator<=>(trace_iterator const&) const
-            noexcept(NoThrow == nothrow::yes) requires is_random;
+        std::strong_ordering operator<=>(trace_iterator const&) const noexcept(NoThrow == nothrow::yes)
+            requires is_random;
 
-        constexpr trace_iterator& operator+=(int const n) noexcept(NoThrow == nothrow::yes) requires is_random {
+        constexpr trace_iterator& operator+=(int const n) noexcept(NoThrow == nothrow::yes)
+            requires is_random
+        {
             ++trace_->seeks_;
             pos_ += n;
             return *this;
         }
-        trace_iterator operator+(int) const noexcept(NoThrow == nothrow::yes) requires is_random;
-        friend trace_iterator operator+(int, trace_iterator const&) noexcept(
-            NoThrow == nothrow::yes) requires is_random {}
+        trace_iterator operator+(int) const noexcept(NoThrow == nothrow::yes)
+            requires is_random;
+        friend trace_iterator operator+(int, trace_iterator const&) noexcept(NoThrow == nothrow::yes)
+            requires is_random
+        {}
 
-        trace_iterator& operator-=(int) noexcept(NoThrow == nothrow::yes) requires is_random;
-        trace_iterator operator-(int) const noexcept(NoThrow == nothrow::yes) requires is_random;
+        trace_iterator& operator-=(int) noexcept(NoThrow == nothrow::yes)
+            requires is_random;
+        trace_iterator operator-(int) const noexcept(NoThrow == nothrow::yes)
+            requires is_random;
 
-        constexpr int operator-(trace_iterator const& that) const
-            noexcept(NoThrow == nothrow::yes) requires is_random || is_sized {
+        constexpr int operator-(trace_iterator const& that) const noexcept(NoThrow == nothrow::yes)
+            requires is_random || is_sized
+        {
             ++trace_->differences_;
             return pos_ - that.pos_;
         }
@@ -3001,6 +3098,7 @@ namespace iter_ops {
         }
 
         {
+#ifndef __EDG__ // TRANSITION, VSO-1898890
             // Call distance(i, s) with arrays which must be decayed to pointers.
             // (This behavior was regressed by LWG-3392.)
             int some_ints[] = {1, 2, 3};
@@ -3018,6 +3116,7 @@ namespace iter_ops {
             STATIC_ASSERT(noexcept(distance(const_ints + 1, const_ints)));
             assert(distance(const_ints, const_ints) == 0);
             STATIC_ASSERT(noexcept(distance(const_ints, const_ints)));
+#endif // ^^^ no workaround ^^^
         }
 
         return true;
@@ -3091,19 +3190,19 @@ namespace reverse_iterator_test {
     STATIC_ASSERT(same_as<reverse_iterator<simple_random_iter<>>::iterator_category, random_access_iterator_tag>);
     STATIC_ASSERT(same_as<reverse_iterator<simple_bidi_iter<>>::iterator_concept, bidirectional_iterator_tag>);
     STATIC_ASSERT(same_as<reverse_iterator<simple_bidi_iter<>>::iterator_category, bidirectional_iterator_tag>);
+    STATIC_ASSERT(same_as<reverse_iterator<xvalue_random_iter>::iterator_concept, random_access_iterator_tag>);
+    STATIC_ASSERT(same_as<reverse_iterator<xvalue_random_iter>::iterator_category, random_access_iterator_tag>);
+    STATIC_ASSERT(same_as<reverse_iterator<xvalue_bidi_iter>::iterator_concept, bidirectional_iterator_tag>);
+    STATIC_ASSERT(same_as<reverse_iterator<xvalue_bidi_iter>::iterator_category, bidirectional_iterator_tag>);
 
     // Validate operator-> for a pointer, and for non-pointers with and without operator->()
-    // clang-format off
     template <class I, class P>
     concept has_arrow = requires(I i) {
         { i.operator->() } -> same_as<P>;
     };
 
     template <class I>
-    concept has_no_arrow = !requires(I i) {
-        i.operator->();
-    };
-    // clang-format on
+    concept has_no_arrow = !requires(I i) { i.operator->(); };
 
     STATIC_ASSERT(has_arrow<reverse_iterator<int*>, int*>);
     STATIC_ASSERT(same_as<reverse_iterator<int*>::pointer, int*>);
@@ -3153,7 +3252,7 @@ namespace reverse_iterator_test {
     constexpr bool test() {
         // Validate iter_move
         int count = 0;
-        auto i    = reverse_iterator{proxy_iterator<0>{&count}};
+        reverse_iterator i{proxy_iterator<0>{&count}};
         assert(ranges::iter_move(i) == 42);
         assert(count == 1);
 
@@ -3215,11 +3314,13 @@ namespace move_iterator_test {
             }
         };
 
-        input_iter()                                              = default;
-        input_iter(input_iter const&) requires CanCopy            = default;
-        input_iter(input_iter&&)                                  = default;
+        input_iter() = default;
+        // clang-format off
+        input_iter(input_iter const&) requires CanCopy = default;
+        input_iter(input_iter&&) = default;
         input_iter& operator=(input_iter const&) requires CanCopy = default;
-        input_iter& operator=(input_iter&&)                       = default;
+        // clang-format on
+        input_iter& operator=(input_iter&&) = default;
 
         reference operator*() const;
         input_iter& operator++();
@@ -3282,6 +3383,12 @@ namespace move_iterator_test {
     STATIC_ASSERT(same_as<move_iterator<simple_input_iter>::iterator_concept, input_iterator_tag>);
     STATIC_ASSERT(same_as<move_iterator<simple_input_iter>::iterator_category, input_iterator_tag>);
     STATIC_ASSERT(same_as<move_iterator<input_iter<true>>::iterator_concept, input_iterator_tag>);
+    STATIC_ASSERT(same_as<move_iterator<xvalue_random_iter>::iterator_concept, random_access_iterator_tag>);
+    STATIC_ASSERT(same_as<move_iterator<xvalue_random_iter>::iterator_category, random_access_iterator_tag>);
+    STATIC_ASSERT(same_as<move_iterator<xvalue_bidi_iter>::iterator_concept, bidirectional_iterator_tag>);
+    STATIC_ASSERT(same_as<move_iterator<xvalue_bidi_iter>::iterator_category, bidirectional_iterator_tag>);
+    STATIC_ASSERT(same_as<move_iterator<xvalue_forward_iter>::iterator_concept, forward_iterator_tag>);
+    STATIC_ASSERT(same_as<move_iterator<xvalue_forward_iter>::iterator_category, forward_iterator_tag>);
     STATIC_ASSERT(!has_member_iter_category<move_iterator<input_iter<true>>>);
     STATIC_ASSERT(same_as<move_iterator<input_iter<false>>::iterator_concept, input_iterator_tag>);
     STATIC_ASSERT(!has_member_iter_category<move_iterator<input_iter<false>>>);
@@ -3336,9 +3443,7 @@ namespace move_iterator_test {
 
     // Validate that move_sentinel requires a semiregular template argument, and models semiregular
     template <class T>
-    concept CanMoveSentinel = requires {
-        typename move_sentinel<T>;
-    };
+    concept CanMoveSentinel = requires { typename move_sentinel<T>; };
     struct moveonly {
         moveonly()                      = default;
         moveonly(moveonly&&)            = default;
@@ -3382,10 +3487,20 @@ namespace move_iterator_test {
     STATIC_ASSERT(!three_way_comparable<move_iterator<simple_random_iter<sentinel_base>>,
                   move_sentinel<std::default_sentinel_t>>);
 
+    // GH-3014 "<ranges>: list-initialization is misused"
+    void test_gh_3014() { // COMPILE-ONLY
+        using S = test::init_list_not_constructible_sentinel<int>;
+        S s;
+        [[maybe_unused]] move_sentinel<S> y{s}; // Check 'move_sentinel(S s)'
+
+        move_sentinel<int*> s2;
+        [[maybe_unused]] move_sentinel<S> z{s2}; // Check 'move_sentinel(const move_sentinel<S2>& s2)'
+    }
+
     constexpr bool test() {
         // Validate iter_move
         int count = 0;
-        auto i    = move_iterator{proxy_iterator<0>{&count}};
+        move_iterator i{proxy_iterator<0>{&count}};
         assert(ranges::iter_move(i) == 42);
         assert(count == 1);
 
@@ -3410,6 +3525,26 @@ namespace move_iterator_test {
         return true;
     }
     STATIC_ASSERT(test());
+
+    // Validate disable_sized_sentinel_for partial specialization for move_iterator (LWG-3736)
+    struct weird_difference_base {
+        template <class T>
+        long operator-(T const&) const {
+            return 42;
+        }
+
+        bool operator==(weird_difference_base const&) const = default;
+    };
+    using simple_no_difference = simple_bidi_iter<weird_difference_base>;
+} // namespace move_iterator_test
+
+template <>
+inline constexpr bool std::disable_sized_sentinel_for<move_iterator_test::simple_no_difference,
+    move_iterator_test::simple_no_difference> = true;
+
+namespace move_iterator_test {
+    STATIC_ASSERT(!std::sized_sentinel_for<simple_no_difference, simple_no_difference>);
+    STATIC_ASSERT(!std::sized_sentinel_for<move_iterator<simple_no_difference>, move_iterator<simple_no_difference>>);
 } // namespace move_iterator_test
 
 namespace counted_iterator_test {
@@ -3427,6 +3562,12 @@ namespace counted_iterator_test {
     STATIC_ASSERT(
         same_as<iterator_traits<counted_iterator<simple_forward_iter<>>>::iterator_category, forward_iterator_tag>);
     STATIC_ASSERT(same_as<iterator_traits<counted_iterator<simple_input_iter>>::iterator_category, input_iterator_tag>);
+    STATIC_ASSERT(
+        same_as<iterator_traits<counted_iterator<xvalue_random_iter>>::iterator_category, random_access_iterator_tag>);
+    STATIC_ASSERT(
+        same_as<iterator_traits<counted_iterator<xvalue_bidi_iter>>::iterator_category, bidirectional_iterator_tag>);
+    STATIC_ASSERT(
+        same_as<iterator_traits<counted_iterator<xvalue_forward_iter>>::iterator_category, forward_iterator_tag>);
 
     // Validate postincrement
     STATIC_ASSERT(same_as<decltype(std::declval<counted_iterator<simple_input_iter>&>()++), simple_input_iter>);

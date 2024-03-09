@@ -137,8 +137,9 @@ static void tminstd_rand0() {
     CHECK_INT(rng_t::modulus, 2147483647);
     rng_t rng;
     Int32 res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_INT(res, 1043618065);
 }
 
@@ -149,8 +150,9 @@ static void tminstd_rand() {
     CHECK_INT(rng_t::modulus, 2147483647);
     rng_t rng;
     Int32 res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_INT(res, 399268537);
 }
 
@@ -222,17 +224,20 @@ static void tmt19937() {
     CHECK_INT(rng_t::state_size, 624);
     CHECK_INT(rng_t::shift_size, 397);
     CHECK_INT(rng_t::mask_bits, 31);
-    CHECK_INT((int) rng_t::parameter_a, (int) 0x9908b0df);
-    CHECK_INT(rng_t::output_u, 11);
-    CHECK_INT(rng_t::output_s, 7);
-    CHECK_INT((int) rng_t::output_b, (int) 0x9d2c5680);
-    CHECK_INT(rng_t::output_t, 15);
-    CHECK_INT((int) rng_t::output_c, (int) 0xefc60000);
-    CHECK_INT(rng_t::output_l, 18);
+    CHECK_INT((int) rng_t::xor_mask, (int) 0x9908b0df);
+    CHECK_INT(rng_t::tempering_u, 11);
+    CHECK_INT((int) rng_t::tempering_d, (int) 0xffffffff);
+    CHECK_INT(rng_t::tempering_s, 7);
+    CHECK_INT((int) rng_t::tempering_b, (int) 0x9d2c5680);
+    CHECK_INT(rng_t::tempering_t, 15);
+    CHECK_INT((int) rng_t::tempering_c, (int) 0xefc60000);
+    CHECK_INT(rng_t::tempering_l, 18);
+    CHECK_INT(rng_t::initialization_multiplier, 1812433253);
     rng_t rng;
     Int32 res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_INT(res, (int) 4123659995UL);
 
     rng_t rng0, rng1;
@@ -332,8 +337,9 @@ static void tranlux3() {
     CHECK_INT(rng_t::base_type::short_lag, 10);
     rng_t rng;
     Int32 res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_INT(res, 5957620);
 }
 
@@ -346,8 +352,9 @@ static void tranlux4() {
     CHECK_INT(rng_t::base_type::short_lag, 10);
     rng_t rng;
     Int32 res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_INT(res, 8587295);
 }
 
@@ -433,8 +440,9 @@ static void tranlux3_01() {
     CHECK_INT(rng_t::base_type::long_lag, 24);
     rng_t rng;
     float res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_DOUBLE(res, 5957620 / CSTD pow(2.0f, 24));
 }
 
@@ -447,8 +455,9 @@ static void tranlux4_01() {
     CHECK_INT(rng_t::base_type::long_lag, 24);
     rng_t rng;
     float res = 0;
-    for (int i = 0; i < 10000; ++i)
+    for (int i = 0; i < 10000; ++i) {
         res = rng();
+    }
     CHECK_DOUBLE(res, 8587295 / STD pow(2.0f, 24));
 }
 #endif // _HAS_TR1_NAMESPACE
@@ -459,9 +468,11 @@ static void tdiscard() {
     typedef STD discard_block<rng_base_t, 223, 24> rng_t;
     CHECK_INT(rng_t::block_size, 223);
     CHECK_INT(rng_t::used_block, 24);
+#if _HAS_TR1_NAMESPACE
     CHECK_INT(rng_t::base_type::modulus, 1 << 24);
     CHECK_INT(rng_t::base_type::long_lag, 24);
     CHECK_INT(rng_t::base_type::short_lag, 10);
+#endif // _HAS_TR1_NAMESPACE
     bool st = STD is_same<rng_t::result_type, Uint32>::value;
     CHECK(st);
 
@@ -495,8 +506,9 @@ static void tdiscard() {
 
     rng_base_t rng4;
     rng_t rng5;
-    for (i = 0; i < rng_t::used_block; ++i)
+    for (i = 0; i < rng_t::used_block; ++i) {
         CHECK_INT(rng4(), rng5());
+    }
     CHECK(rng4() != rng5());
     for (; i < rng_t::block_size; ++i) {
         (void) rng4();

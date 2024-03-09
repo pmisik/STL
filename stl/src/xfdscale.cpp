@@ -7,7 +7,7 @@
 
 _EXTERN_C_UNLESS_PURE
 
-short _FDscale(float* px, long lexp) { // scale *px by 2^xexp with checking
+short _FDscale(float* px, long lexp) noexcept { // scale *px by 2^xexp with checking
     const auto ps = reinterpret_cast<_Fval*>(px);
     short xchar   = static_cast<short>((ps->_Sh[_F0] & _FMASK) >> _FOFF);
 
@@ -42,6 +42,7 @@ short _FDscale(float* px, long lexp) { // scale *px by 2^xexp with checking
                 ps->_Sh[_F0] = 0;
                 xexp += 16;
             }
+
             if (xexp != 0) { // scale by bits
                 xexp         = -xexp;
                 psx          = (ps->_Sh[_F1] << (16 - xexp)) | (psx != 0 ? 1 : 0);

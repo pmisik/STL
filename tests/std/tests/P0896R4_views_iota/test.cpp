@@ -5,23 +5,29 @@
 #include <cassert>
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <ranges>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 using namespace std;
 
 static_assert(ranges::_Advanceable<long long>);
 
 template <class W, class B>
-concept CanViewIota = requires(W w, B b) {
-    views::iota(w, b);
-};
+concept CanViewIota = requires(W w, B b) { views::iota(w, b); };
 
 template <class R>
-concept CanSize = requires(R& r) {
-    ranges::size(r);
+concept CanSize = requires(R& r) { ranges::size(r); };
+
+template <class R>
+concept CanEmpty = requires(const R& r) { ranges::empty(r); };
+
+template <class R>
+concept CanMemberEmpty = requires(const R& r) {
+    { r.empty() } -> same_as<bool>;
 };
 
 struct empty_type {};
@@ -143,8 +149,8 @@ constexpr void test_integral() {
         assert(second >= first);
         static_assert(noexcept(first >= second)); // strengthened
 
-        assert(first <=> second < 0);
-        assert(second <=> first > 0);
+        assert((first <=> second) < 0);
+        assert((second <=> first) > 0);
         static_assert(noexcept(first <=> second)); // strengthened
 
         {
@@ -201,6 +207,14 @@ constexpr void test_integral() {
         static_assert(noexcept(first != last)); // strengthened
         assert(last - first == 8);
         static_assert(noexcept(last - first)); // strengthened
+
+#if _HAS_CXX23
+        const same_as<ranges::const_iterator_t<R>> auto cfirst = rng.cbegin();
+        assert(cfirst == first);
+        const same_as<ranges::const_sentinel_t<R>> auto clast = rng.cend();
+        assert(clast == last);
+        assert(clast - cfirst == 8);
+#endif // _HAS_CXX23
     }
 
     {
@@ -238,6 +252,21 @@ constexpr void test_integral() {
         }
 
         static_assert(!CanSize<ranges::iota_view<T>>);
+
+#if _HAS_CXX23
+        {
+            const same_as<R> auto rng = views::iota(low);
+            const ranges::subrange crng{rng.cbegin(), rng.cend()};
+
+            auto i = low;
+            for (const auto& e : crng) {
+                assert(e == i);
+                if (++i == high) {
+                    break;
+                }
+            }
+        }
+#endif // _HAS_CXX23
     }
 }
 
@@ -294,6 +323,16 @@ constexpr bool test_difference() {
     return true;
 }
 
+constexpr bool test_gh_3025() {
+    // GH-3025 <iterator>: ranges::prev maybe ill-formed in debug mode
+    auto r  = views::iota(0ull, 5ull);
+    auto it = r.end();
+    auto pr = ranges::prev(it, 3);
+    assert(*pr == 2ull);
+
+    return true;
+}
+
 int main() {
     // Validate standard signed integer types
     static_assert((test_integral<signed char>(), true));
@@ -320,9 +359,7 @@ int main() {
     test_integral<unsigned long long>();
 
     // Validate other integer types
-#ifndef __clang__ // TRANSITION, LLVM-48173
     static_assert(!CanViewIota<bool, bool>);
-#endif // TRANSITION, LLVM-48173
     static_assert((test_integral<char>(), true));
     test_integral<char>();
     static_assert((test_integral<wchar_t>(), true));
@@ -345,6 +382,16 @@ int main() {
             views::iota(begin(as_const(objects)), end(objects)), objects, ranges::equal_to{}, identity{}, address));
         assert(ranges::equal(
             views::iota(begin(objects), end(as_const(objects))), objects, ranges::equal_to{}, identity{}, address));
+
+        using FirstConstIota = decltype(views::iota(begin(as_const(objects)), end(objects)));
+        static_assert(CanEmpty<FirstConstIota>);
+        static_assert(CanMemberEmpty<FirstConstIota>);
+        static_assert(noexcept(declval<const FirstConstIota&>().empty())); // strengthened
+
+        using SecondConstIota = decltype(views::iota(begin(objects), end(as_const(objects))));
+        static_assert(CanEmpty<SecondConstIota>);
+        static_assert(CanMemberEmpty<SecondConstIota>);
+        static_assert(noexcept(declval<const SecondConstIota&>().empty())); // strengthened
     }
     {
         // Iterator and sentinel of a non-common range
@@ -358,8 +405,30 @@ int main() {
         auto r = views::iota(ranges::begin(f), ranges::end(f));
 
         assert(ranges::equal(r, even_ints, ranges::equal_to{}, deref));
+
+        using FilteredIota = decltype(r);
+        static_assert(CanEmpty<FilteredIota>);
+        static_assert(CanMemberEmpty<FilteredIota>);
+    }
+    // LWG-4001 iota_view should provide empty
+    {
+        using BackInsertingIota = decltype(views::iota(back_inserter(declval<vector<int>&>())));
+        static_assert(CanEmpty<BackInsertingIota>);
+        static_assert(CanMemberEmpty<BackInsertingIota>);
+        static_assert(noexcept(declval<const BackInsertingIota&>().empty())); // strengthened
+
+        constexpr auto test_back_inserting_iota_nonempty = [] {
+            vector<int> v;
+            auto vw = views::iota(back_inserter(v));
+            return !vw.empty();
+        };
+        assert(test_back_inserting_iota_nonempty());
+        static_assert(test_back_inserting_iota_nonempty());
     }
 
     test_difference();
     static_assert(test_difference());
+
+    test_gh_3025();
+    static_assert(test_gh_3025());
 }

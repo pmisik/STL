@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include <array>
+#include <atomic>
 #include <bitset>
 #include <cassert>
 #include <chrono>
@@ -10,16 +11,19 @@
 #include <deque>
 #include <forward_list>
 #include <functional>
+#include <future>
 #include <initializer_list>
 #include <iterator>
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <queue>
 #include <regex>
 #include <scoped_allocator>
 #include <set>
+#include <shared_mutex>
 #include <sstream>
 #include <stack>
 #include <streambuf>
@@ -32,16 +36,6 @@
 #include <utility>
 #include <valarray>
 #include <vector>
-
-#ifndef _M_CEE_PURE
-#include <atomic>
-#endif // _M_CEE_PURE
-
-#ifndef _M_CEE
-#include <future>
-#include <mutex>
-#include <shared_mutex>
-#endif // _M_CEE
 
 #if _HAS_CXX23 && !defined(__clang__) // TRANSITION, DevCom-10107077, Clang has not implemented Deducing this
 #define HAS_EXPLICIT_THIS_PARAMETER
@@ -507,13 +501,13 @@ void test_basic_string() {
     static_assert(is_same_v<decltype(str17), basic_string<wchar_t, char_traits<wchar_t>, MyAlloc<wchar_t>>>);
     static_assert(is_same_v<decltype(str18), basic_string<wchar_t, char_traits<wchar_t>, MyAlloc<wchar_t>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     basic_string str19(from_range, first);
     basic_string str20(from_range, first, myal);
 
     static_assert(is_same_v<decltype(str19), wstring>);
     static_assert(is_same_v<decltype(str20), basic_string<wchar_t, char_traits<wchar_t>, MyAlloc<wchar_t>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 void test_basic_string_view() {
@@ -573,13 +567,13 @@ void test_sequence_container() {
     static_assert(is_same_v<decltype(c6), Sequence<long, MyAlloc<long>>>);
     static_assert(is_same_v<decltype(c7), Sequence<long, MyAlloc<long>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     Sequence c8(from_range, first);
     Sequence c9(from_range, first, myal);
 
     static_assert(is_same_v<decltype(c8), Sequence<long>>);
     static_assert(is_same_v<decltype(c9), Sequence<long, MyAlloc<long>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 void test_vector_bool() {
@@ -604,13 +598,13 @@ void test_vector_bool() {
     static_assert(is_same_v<decltype(vb6), vector<bool, MyAlloc<bool>>>);
     static_assert(is_same_v<decltype(vb7), vector<bool, MyAlloc<bool>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     vector vb8(from_range, first);
     vector vb9(from_range, first, myal);
 
     static_assert(is_same_v<decltype(vb8), vector<bool>>);
     static_assert(is_same_v<decltype(vb9), vector<bool, MyAlloc<bool>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 template <template <typename K, typename V, typename C = less<K>, typename A = allocator<pair<const K, V>>> typename M>
@@ -647,7 +641,7 @@ void test_map_or_multimap() {
     static_assert(is_same_v<decltype(m12), M<long, char, MyGreater, MyAlloc<CPurr>>>);
     static_assert(is_same_v<decltype(m13), M<long, char, less<long>, MyAlloc<CPurr>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     M m14(from_range, first);
     M m15(from_range, first, gt);
     M m16(from_range, first, gt, myal);
@@ -657,7 +651,21 @@ void test_map_or_multimap() {
     static_assert(is_same_v<decltype(m15), M<long, char, MyGreater>>);
     static_assert(is_same_v<decltype(m16), M<long, char, MyGreater, MyAlloc<CPurr>>>);
     static_assert(is_same_v<decltype(m17), M<long, char, less<long>, MyAlloc<CPurr>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+
+    { // Verify changes from P2165R4
+        using TupleIter = tuple<int, double>*;
+        static_assert(is_same_v<decltype(M{TupleIter{}, TupleIter{}}), M<int, double>>);
+
+        using PairIter = pair<int, float>*;
+        static_assert(is_same_v<decltype(M{PairIter{}, PairIter{}}), M<int, float>>);
+
+        using ArrayIter = array<int, 2>*;
+        static_assert(is_same_v<decltype(M{ArrayIter{}, ArrayIter{}}), M<int, int>>);
+
+        using SubrangeIter = ranges::subrange<int*, int*>*;
+        static_assert(is_same_v<decltype(M{SubrangeIter{}, SubrangeIter{}}), M<int*, int*>>);
+    }
+#endif // _HAS_CXX23
 }
 
 template <template <typename K, typename C = less<K>, typename A = allocator<K>> typename S>
@@ -688,7 +696,7 @@ void test_set_or_multiset() {
     static_assert(is_same_v<decltype(s8), S<long, less<long>, MyAlloc<long>>>);
     static_assert(is_same_v<decltype(s9), S<long, less<long>, MyAlloc<long>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     S s10(from_range, first);
     S s11(from_range, first, gt);
     S s12(from_range, first, gt, myal);
@@ -698,7 +706,7 @@ void test_set_or_multiset() {
     static_assert(is_same_v<decltype(s11), S<long, MyGreater>>);
     static_assert(is_same_v<decltype(s12), S<long, MyGreater, MyAlloc<long>>>);
     static_assert(is_same_v<decltype(s13), S<long, less<long>, MyAlloc<long>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 template <template <typename K, typename V, typename H = hash<K>, typename P = equal_to<K>,
@@ -752,7 +760,7 @@ void test_unordered_map_or_unordered_multimap() {
     static_assert(is_same_v<decltype(um24), UM<long, char, hash<long>, equal_to<long>, MyAlloc<CPurr>>>);
     static_assert(is_same_v<decltype(um25), UM<long, char, MyHash, equal_to<long>, MyAlloc<CPurr>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     UM um26(from_range, first);
     UM um27(from_range, first, 7);
     UM um28(from_range, first, 7, hf);
@@ -770,7 +778,7 @@ void test_unordered_map_or_unordered_multimap() {
     static_assert(is_same_v<decltype(um31), UM<long, char, hash<long>, equal_to<long>, MyAlloc<CPurr>>>);
     static_assert(is_same_v<decltype(um32), UM<long, char, hash<long>, equal_to<long>, MyAlloc<CPurr>>>);
     static_assert(is_same_v<decltype(um33), UM<long, char, MyHash, equal_to<long>, MyAlloc<CPurr>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 template <template <typename K, typename H = hash<K>, typename P = equal_to<K>, typename A = allocator<K>> typename US>
@@ -814,7 +822,7 @@ void test_unordered_set_or_unordered_multiset() {
     static_assert(is_same_v<decltype(us14), US<long, MyHash, equal_to<long>, MyAlloc<long>>>);
     static_assert(is_same_v<decltype(us15), US<long, MyHash, MyEqual, MyAlloc<long>>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     US us16(from_range, first);
     US us17(from_range, first, 7);
     US us18(from_range, first, 7, hf);
@@ -830,7 +838,7 @@ void test_unordered_set_or_unordered_multiset() {
     static_assert(is_same_v<decltype(us20), US<long, MyHash, MyEqual, MyAlloc<long>>>);
     static_assert(is_same_v<decltype(us21), US<long, hash<long>, equal_to<long>, MyAlloc<long>>>);
     static_assert(is_same_v<decltype(us22), US<long, MyHash, equal_to<long>, MyAlloc<long>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 void test_queue_and_stack() {
@@ -855,13 +863,11 @@ void test_queue_and_stack() {
     static_assert(is_same_v<decltype(q4), queue<long>>);
     static_assert(is_same_v<decltype(q5), queue<long, deque<long, MyAlloc<long>>>>);
 
-#ifdef __cpp_lib_concepts
     queue q6(from_range, first);
     queue q7(from_range, first, myal);
 
     static_assert(is_same_v<decltype(q6), queue<long>>);
     static_assert(is_same_v<decltype(q7), queue<long, deque<long, MyAlloc<long>>>>);
-#endif // __cpp_lib_concepts
 #endif // _HAS_CXX23
 
     stack s1(lst);
@@ -879,13 +885,11 @@ void test_queue_and_stack() {
     static_assert(is_same_v<decltype(s4), stack<long>>);
     static_assert(is_same_v<decltype(s5), stack<long, deque<long, MyAlloc<long>>>>);
 
-#ifdef __cpp_lib_concepts
     stack s6(from_range, first);
     stack s7(from_range, first, myal);
 
     static_assert(is_same_v<decltype(s6), stack<long>>);
     static_assert(is_same_v<decltype(s7), stack<long, deque<long, MyAlloc<long>>>>);
-#endif // __cpp_lib_concepts
 #endif // _HAS_CXX23
 }
 
@@ -916,7 +920,7 @@ void test_priority_queue() {
     static_assert(is_same_v<decltype(pq8), priority_queue<long, deque<long, MyAlloc<long>>, MyGreater>>);
     static_assert(is_same_v<decltype(pq9), priority_queue<long, deque<long, MyAlloc<long>>, MyGreater>>);
 
-#if _HAS_CXX23 && defined(__cpp_lib_concepts) // TRANSITION, GH-395
+#if _HAS_CXX23
     priority_queue pq10(from_range, first);
     priority_queue pq11(from_range, first, gt);
     priority_queue pq12(from_range, first, gt, myal);
@@ -926,7 +930,7 @@ void test_priority_queue() {
     static_assert(is_same_v<decltype(pq11), priority_queue<long, vector<long>, MyGreater>>);
     static_assert(is_same_v<decltype(pq12), priority_queue<long, vector<long, MyAlloc<long>>, MyGreater>>);
     static_assert(is_same_v<decltype(pq13), priority_queue<long, vector<long, MyAlloc<long>>>>);
-#endif // _HAS_CXX23 && defined(__cpp_lib_concepts)
+#endif // _HAS_CXX23
 }
 
 void test_iterator_adaptors() {
@@ -1102,7 +1106,6 @@ void test_regex() {
 }
 
 void test_atomic() {
-#ifndef _M_CEE_PURE
     long x = 11L;
 
     atomic atom1(x);
@@ -1110,11 +1113,9 @@ void test_atomic() {
 
     static_assert(is_same_v<decltype(atom1), atomic<long>>);
     static_assert(is_same_v<decltype(atom2), atomic<long*>>);
-#endif // _M_CEE_PURE
 }
 
 void test_locks() {
-#ifndef _M_CEE
     recursive_mutex rm{};
     recursive_timed_mutex rtm{};
     lock_guard lg(rm);
@@ -1144,7 +1145,6 @@ void test_locks() {
     static_assert(is_same_v<decltype(scoped5), scoped_lock<recursive_mutex, recursive_timed_mutex>>);
     static_assert(is_same_v<decltype(shared), shared_lock<shared_timed_mutex>>);
     static_assert(is_same_v<decltype(shared2), shared_lock<shared_timed_mutex>>);
-#endif // _M_CEE
 }
 
 int main() {
@@ -1161,9 +1161,7 @@ int main() {
     test_transparent_operator_functors();
 
     test_function_wrapper<function>();
-#ifndef _M_CEE
     test_function_wrapper<packaged_task>();
-#endif // _M_CEE
 
     test_searchers();
     test_duration_and_time_point();
