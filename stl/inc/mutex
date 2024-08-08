@@ -162,9 +162,7 @@ public:
     _NODISCARD_CTOR_LOCK unique_lock(_Mutex& _Mtx, const chrono::time_point<_Clock, _Duration>& _Abs_time)
         : _Pmtx(_STD addressof(_Mtx)), _Owns(_Pmtx->try_lock_until(_Abs_time)) {
         // construct and lock with timeout
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
     }
 
     _NODISCARD_CTOR_LOCK unique_lock(unique_lock&& _Other) noexcept : _Pmtx(_Other._Pmtx), _Owns(_Other._Owns) {
@@ -216,9 +214,7 @@ public:
 
     template <class _Clock, class _Duration>
     _NODISCARD_TRY_CHANGE_STATE bool try_lock_until(const chrono::time_point<_Clock, _Duration>& _Abs_time) {
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
         _Validate();
         _Owns = _Pmtx->try_lock_until(_Abs_time);
         return _Owns;
@@ -535,13 +531,15 @@ _EXPORT_STD enum class cv_status { // names for wait returns
 
 _EXPORT_STD class condition_variable { // class for waiting for conditions
 public:
+#ifdef _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
     condition_variable() noexcept /* strengthened */ {
         _Cnd_init_in_situ(_Mycnd());
     }
+#else // ^^^ defined(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR) / !defined(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR) vvv
+    condition_variable() noexcept /* strengthened */ = default;
+#endif // ^^^ !defined(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR) ^^^
 
-    ~condition_variable() noexcept {
-        _Cnd_destroy_in_situ(_Mycnd());
-    }
+    ~condition_variable() noexcept = default;
 
     condition_variable(const condition_variable&)            = delete;
     condition_variable& operator=(const condition_variable&) = delete;
@@ -585,9 +583,7 @@ public:
     template <class _Clock, class _Duration>
     cv_status wait_until(unique_lock<mutex>& _Lck, const chrono::time_point<_Clock, _Duration>& _Abs_time) {
         // wait until time point
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
 #if _CONTAINER_DEBUG_LEVEL > 0
         _STL_VERIFY(
             _Lck.owns_lock(), "wait_until's caller must own the lock argument (N4958 [thread.condition.condvar]/17)");
@@ -601,11 +597,9 @@ public:
                 return cv_status::timeout;
             }
 
-            // TRANSITION, ABI: should use a steady clock
-            _timespec64 _Tgt;
-            (void) _To_timespec64_sys_10_day_clamped(_Tgt, _Abs_time - _Now);
-            // Nothing to do to comply with LWG-2135 because std::mutex lock/unlock are nothrow
-            const _Thrd_result _Res = _Cnd_timedwait(_Mycnd(), _Lck.mutex()->_Mymtx(), &_Tgt);
+            const unsigned long _Rel_ms_count = _Clamped_rel_time_ms_count(_Abs_time - _Now)._Count;
+
+            const _Thrd_result _Res = _Cnd_timedwait_for_unchecked(_Mycnd(), _Lck.mutex()->_Mymtx(), _Rel_ms_count);
             if (_Res == _Thrd_result::_Success) {
                 return cv_status::no_timeout;
             }
@@ -616,9 +610,7 @@ public:
     bool wait_until(
         unique_lock<mutex>& _Lck, const chrono::time_point<_Clock, _Duration>& _Abs_time, _Predicate _Pred) {
         // wait for signal with timeout and check predicate
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
         while (!_Pred()) {
             if (wait_until(_Lck, _Abs_time) == cv_status::timeout) {
                 return _Pred();
@@ -639,10 +631,10 @@ public:
     }
 
 private:
-    _Aligned_storage_t<_Cnd_internal_imp_size, _Cnd_internal_imp_alignment> _Cnd_storage;
+    _Cnd_internal_imp_t _Cnd_storage{};
 
-    _Cnd_t _Mycnd() noexcept { // get pointer to _Cnd_internal_imp_t inside _Cnd_storage
-        return reinterpret_cast<_Cnd_t>(&_Cnd_storage);
+    _Cnd_t _Mycnd() noexcept {
+        return &_Cnd_storage;
     }
 };
 
@@ -698,9 +690,7 @@ public:
     template <class _Clock, class _Duration>
     _NODISCARD_TRY_CHANGE_STATE bool try_lock_until(const chrono::time_point<_Clock, _Duration>& _Abs_time) {
         // try to lock the mutex with timeout
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
         unique_lock<mutex> _Lock(_My_mutex);
         if (!_My_cond.wait_until(_Lock, _Abs_time, _UInt_is_zero{_My_locked})) {
             return false;
@@ -794,9 +784,7 @@ public:
     template <class _Clock, class _Duration>
     _NODISCARD_TRY_CHANGE_STATE bool try_lock_until(const chrono::time_point<_Clock, _Duration>& _Abs_time) {
         // try to lock the mutex with timeout
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
         const thread::id _Tid = this_thread::get_id();
 
         unique_lock<mutex> _Lock(_My_mutex);

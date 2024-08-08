@@ -31,7 +31,7 @@ namespace chrono {
     struct treat_as_floating_point : is_floating_point<_Rep> {}; // tests for floating-point type
 
     _EXPORT_STD template <class _Rep>
-    _INLINE_VAR constexpr bool treat_as_floating_point_v = treat_as_floating_point<_Rep>::value;
+    constexpr bool treat_as_floating_point_v = treat_as_floating_point<_Rep>::value;
 
     _EXPORT_STD template <class _Rep>
     struct duration_values { // gets arithmetic properties of a type
@@ -52,26 +52,36 @@ namespace chrono {
     };
 
 #if _HAS_CXX20
-    template <class _Clock, class = void>
-    inline constexpr bool _Is_clock_v = false;
+    _EXPORT_STD template <class _Clock>
+    constexpr bool is_clock_v = requires {
+        typename _Clock::rep;
+        typename _Clock::period;
+        typename _Clock::duration;
+        typename _Clock::time_point;
+        _Clock::is_steady;
+        _Clock::now();
+    };
+    _EXPORT_STD template <class _Clock>
+    struct is_clock : bool_constant<is_clock_v<_Clock>> {};
 
     template <class _Clock>
-    inline constexpr bool
+    constexpr bool _Is_clock_v = is_clock_v<_Clock>;
+#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
+    template <class _Clock, class = void>
+    constexpr bool _Is_clock_v = false;
+
+    template <class _Clock>
+    constexpr bool
         _Is_clock_v<_Clock, void_t<typename _Clock::rep, typename _Clock::period, typename _Clock::duration,
                                 typename _Clock::time_point, decltype(_Clock::is_steady), decltype(_Clock::now())>> =
-            true; // TRANSITION, GH-602
-
-    _EXPORT_STD template <class _Clock>
-    struct is_clock : bool_constant<_Is_clock_v<_Clock>> {};
-    _EXPORT_STD template <class _Clock>
-    inline constexpr bool is_clock_v = _Is_clock_v<_Clock>;
-#endif // _HAS_CXX20
+            true;
+#endif // ^^^ !_HAS_CXX20 ^^^
 
     _EXPORT_STD template <class _Rep, class _Period = ratio<1>>
     class duration;
 
     template <class _Ty>
-    _INLINE_VAR constexpr bool _Is_duration_v = _Is_specialization_v<_Ty, duration>;
+    constexpr bool _Is_duration_v = _Is_specialization_v<_Ty, duration>;
 
     _EXPORT_STD template <class _To, class _Rep, class _Period, enable_if_t<_Is_duration_v<_To>, int> = 0>
     constexpr _To duration_cast(const duration<_Rep, _Period>&) noexcept(
@@ -252,11 +262,10 @@ namespace chrono {
 } // namespace chrono
 
 template <class _Rep, class _Period>
-_INLINE_VAR constexpr bool _Is_trivially_swappable_v<chrono::duration<_Rep, _Period>> = _Is_trivially_swappable_v<_Rep>;
+constexpr bool _Is_trivially_swappable_v<chrono::duration<_Rep, _Period>> = _Is_trivially_swappable_v<_Rep>;
 
 template <class _Clock, class _Duration>
-_INLINE_VAR constexpr bool _Is_trivially_swappable_v<chrono::time_point<_Clock, _Duration>> =
-    _Is_trivially_swappable_v<_Duration>;
+constexpr bool _Is_trivially_swappable_v<chrono::time_point<_Clock, _Duration>> = _Is_trivially_swappable_v<_Duration>;
 
 _NODISCARD constexpr intmax_t _Lcm(const intmax_t _Ax, const intmax_t _Bx) noexcept {
     return (_Ax / _Gcd(_Ax, _Bx)) * _Bx;
@@ -631,7 +640,7 @@ namespace chrono {
         return time_point<_Clock, _To>(_CHRONO round<_To>(_Time.time_since_epoch()));
     }
 
-    _EXPORT_STD struct system_clock { // wraps GetSystemTimePreciseAsFileTime/GetSystemTimeAsFileTime
+    _EXPORT_STD struct system_clock { // wraps GetSystemTimePreciseAsFileTime
         using rep                       = long long;
         using period                    = ratio<1, 10'000'000>; // 100 nanoseconds
         using duration                  = _CHRONO duration<rep, period>;
@@ -714,30 +723,6 @@ namespace chrono {
 
     _EXPORT_STD using high_resolution_clock = steady_clock;
 } // namespace chrono
-
-template <class _Rep, class _Period>
-_NODISCARD bool _To_timespec64_sys_10_day_clamped(
-    _timespec64& _Ts64, const _CHRONO duration<_Rep, _Period>& _Rel_time) noexcept(is_arithmetic_v<_Rep>) {
-    // Convert duration to _timespec64 representing system time, maximum 10 days from now, returns whether clamping
-    // occurred. If clamped, timeouts will be transformed into spurious non-timeout wakes, due to ABI restrictions where
-    // the other side of the DLL boundary overflows int32_t milliseconds.
-    // Every function calling this one is TRANSITION, ABI
-    constexpr _CHRONO nanoseconds _Ten_days{_CHRONO hours{24} * 10};
-    constexpr _CHRONO duration<double> _Ten_days_d{_Ten_days};
-    _CHRONO nanoseconds _Tx0 = _CHRONO system_clock::duration{_Xtime_get_ticks()};
-    const bool _Clamped      = _Ten_days_d < _Rel_time;
-    if (_Clamped) {
-        _Tx0 += _Ten_days;
-    } else {
-        _Tx0 += _CHRONO duration_cast<_CHRONO nanoseconds>(_Rel_time);
-    }
-
-    const auto _Whole_seconds = _CHRONO duration_cast<_CHRONO seconds>(_Tx0);
-    _Ts64.tv_sec              = _Whole_seconds.count();
-    _Tx0 -= _Whole_seconds;
-    _Ts64.tv_nsec = static_cast<long>(_Tx0.count());
-    return _Clamped;
-}
 
 inline namespace literals {
     inline namespace chrono_literals {

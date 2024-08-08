@@ -172,8 +172,10 @@ _STL_DISABLE_CLANG_WARNINGS
 #ifndef _STL_CRT_SECURE_INVALID_PARAMETER
 #ifdef _STL_CALL_ABORT_INSTEAD_OF_INVALID_PARAMETER
 #define _STL_CRT_SECURE_INVALID_PARAMETER(expr) _CSTD abort()
-#elif defined(_DEBUG) // avoid emitting unused long strings for function names; see GH-1956
-#define _STL_CRT_SECURE_INVALID_PARAMETER(expr) ::_invalid_parameter(_CRT_WIDE(#expr), L"", __FILEW__, __LINE__, 0)
+#elif defined(_DEBUG) // Avoid emitting unused long strings for function names; see GH-1956.
+// static_cast<unsigned int>(__LINE__) avoids warning C4365 (signed/unsigned mismatch) with the /ZI compiler option.
+#define _STL_CRT_SECURE_INVALID_PARAMETER(expr) \
+    ::_invalid_parameter(_CRT_WIDE(#expr), L"", __FILEW__, static_cast<unsigned int>(__LINE__), 0)
 #else // ^^^ defined(_DEBUG) / !defined(_DEBUG) vvv
 #define _STL_CRT_SECURE_INVALID_PARAMETER(expr) _CRT_SECURE_INVALID_PARAMETER(expr)
 #endif // ^^^ !defined(_DEBUG) ^^^
@@ -313,22 +315,6 @@ _EMIT_STL_WARNING(STL4001, "/clr:pure is deprecated and will be REMOVED.");
 #define _LOCK_STREAM 2
 #define _LOCK_DEBUG  3
 
-#ifndef _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B
-#if _STL_WIN32_WINNT >= _STL_WIN32_WINNT_WINBLUE && defined(_WIN64)
-#define _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B 1
-#else // ^^^ modern 64-bit / less modern or 32-bit vvv
-#define _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B 0
-#endif // _STL_WIN32_WINNT >= _STL_WIN32_WINNT_WINBLUE && defined(_WIN64)
-#endif // !defined(_STD_ATOMIC_ALWAYS_USE_CMPXCHG16B)
-
-#if _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 && defined(_M_ARM64)
-#error ARM64 requires _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B to be 1.
-#endif // _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 0 && defined(_M_ARM64)
-
-#if _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 && !defined(_WIN64)
-#error _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 requires 64-bit.
-#endif // _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B == 1 && !defined(_WIN64)
-
 _STD_BEGIN
 enum _Uninitialized { // tag for suppressing initialization
     _Noinit
@@ -465,11 +451,7 @@ private:
     }              \
     }
 
-#ifdef _DEBUG
-#define _RAISE(x) _invoke_watson(_CRT_WIDE(#x), __FUNCTIONW__, __FILEW__, __LINE__, 0)
-#else
 #define _RAISE(x) _invoke_watson(nullptr, nullptr, nullptr, 0, 0)
-#endif
 
 #define _RERAISE
 #define _THROW(...) (__VA_ARGS__)._Raise()

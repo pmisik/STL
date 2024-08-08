@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #define _SILENCE_CXX20_CODECVT_FACETS_DEPRECATION_WARNING
+#define _SILENCE_CXX20_CODECVT_CHAR8_T_FACETS_DEPRECATION_WARNING
 
 #include <cassert>
 #include <cstdio>
@@ -64,7 +65,9 @@ void test_dll() {
     TheFuncProc pFunc = reinterpret_cast<TheFuncProc>(GetProcAddress(hLibrary, "DllTest"));
     assert(pFunc != nullptr);
     pFunc();
+#if defined(_DLL) || !defined(__SANITIZE_ADDRESS__) // TRANSITION, VSO-2046190
     FreeLibrary(hLibrary);
+#endif // defined(_DLL) || !defined(__SANITIZE_ADDRESS__)
 #endif // ^^^ !defined(_M_CEE) ^^^
 }
 

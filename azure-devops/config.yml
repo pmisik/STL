@@ -5,10 +5,10 @@
 
 variables:
 - name: poolName
-  value: 'StlBuild-2024-02-13T1246-Pool'
+  value: 'StlBuild-2024-07-09T1614-Pool'
   readonly: true
 - name: poolDemands
-  value: 'EnableSpotVM -equals true'
+  value: 'EnableSpotVM -equals false'
   readonly: true
 - name: tmpDir
   value: 'D:\Temp'
@@ -19,6 +19,12 @@ variables:
 - name: benchmarkBuildOutputLocation
   value: 'D:\benchmark'
   readonly: true
+- name: validationBuildOutputLocation
+  value: 'D:\validation'
+  readonly: true
 - name: Codeql.SkipTaskAutoInjection
+  value: true
+  readonly: true
+- name: skipComponentGovernanceDetection
   value: true
   readonly: true

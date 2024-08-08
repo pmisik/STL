@@ -58,7 +58,7 @@ issue. The [bug tag][] and [enhancement tag][] are being populated.
 
 # Goals
 
-We're implementing the latest C++ Working Draft, currently [N4971][], which will eventually become the next C++
+We're implementing the latest C++ Working Draft, currently [N4986][], which will eventually become the next C++
 International Standard. The terms Working Draft (WD) and Working Paper (WP) are interchangeable; we often
 informally refer to these drafts as "the Standard" while being aware of the difference. (There are other relevant
 Standards; for example, supporting `/std:c++14` and `/std:c++17` involves understanding how the C++14 and C++17
@@ -141,11 +141,15 @@ Just try to follow these rules, so we can spend more time fixing bugs and implem
 
 # How To Build With The Visual Studio IDE
 
-1. Install Visual Studio 2022 17.10 Preview 1 or later.
-    * Select "Windows 11 SDK (10.0.22000.0)" in the VS Installer.
+1. Install Visual Studio 2022 17.11 Preview 3 or later.
+    * Select "Windows 11 SDK (10.0.22621.0)" in the VS Installer.
+    * Select "MSVC v143 - VS 2022 C++ ARM64/ARM64EC build tools (Latest)" in the VS Installer
+    if you would like to build the ARM64/ARM64EC target.
+    * Select "MSVC v143 - VS 2022 C++ ARM build tools (Latest)" in the VS Installer
+    if you would like to build the ARM target.
     * We recommend selecting "C++ CMake tools for Windows" in the VS Installer.
     This will ensure that you're using supported versions of CMake and Ninja.
-    * Otherwise, install [CMake][] 3.28.0 or later, and [Ninja][] 1.11.0 or later.
+    * Otherwise, install [CMake][] 3.29.0 or later, and [Ninja][] 1.11.0 or later.
     * Make sure [Python][] 3.12 or later is available to CMake.
 2. Open Visual Studio, and choose the "Clone or check out code" option. Enter the URL of this repository,
    `https://github.com/microsoft/STL`.
@@ -156,11 +160,15 @@ Just try to follow these rules, so we can spend more time fixing bugs and implem
 
 # How To Build With A Native Tools Command Prompt
 
-1. Install Visual Studio 2022 17.10 Preview 1 or later.
-    * Select "Windows 11 SDK (10.0.22000.0)" in the VS Installer.
+1. Install Visual Studio 2022 17.11 Preview 3 or later.
+    * Select "Windows 11 SDK (10.0.22621.0)" in the VS Installer.
+    * Select "MSVC v143 - VS 2022 C++ ARM64/ARM64EC build tools (Latest)" in the VS Installer
+    if you would like to build the ARM64/ARM64EC target.
+    * Select "MSVC v143 - VS 2022 C++ ARM build tools (Latest)" in the VS Installer
+    if you would like to build the ARM target.
     * We recommend selecting "C++ CMake tools for Windows" in the VS Installer.
     This will ensure that you're using supported versions of CMake and Ninja.
-    * Otherwise, install [CMake][] 3.28.0 or later, and [Ninja][] 1.11.0 or later.
+    * Otherwise, install [CMake][] 3.29.0 or later, and [Ninja][] 1.11.0 or later.
     * Make sure [Python][] 3.12 or later is available to CMake.
 2. Open a command prompt.
 3. Change directories to a location where you'd like a clone of this STL repository.
@@ -179,6 +187,30 @@ To build the x64 target (recommended):
 2. Change directories to the previously cloned `STL` directory.
 3. `cmake --preset x64`
 4. `cmake --build --preset x64`
+
+To build the ARM target:
+
+1. `"C:\Program Files\Microsoft Visual Studio\2022\Preview\VC\Auxiliary\Build\vcvarsall.bat" x64_arm`
+    * If you installed VS to a non-default location, change this path accordingly.
+2. Change directories to the previously cloned `STL` directory.
+3. `cmake --preset ARM`
+4. `cmake --build --preset ARM`
+
+To build the ARM64 target:
+
+1. `"C:\Program Files\Microsoft Visual Studio\2022\Preview\VC\Auxiliary\Build\vcvarsall.bat" x64_arm64`
+    * If you installed VS to a non-default location, change this path accordingly.
+2. Change directories to the previously cloned `STL` directory.
+3. `cmake --preset ARM64`
+4. `cmake --build --preset ARM64`
+
+To build the ARM64EC target:
+
+1. `"C:\Program Files\Microsoft Visual Studio\2022\Preview\VC\Auxiliary\Build\vcvarsall.bat" x64_arm64`
+    * If you installed VS to a non-default location, change this path accordingly.
+2. Change directories to the previously cloned `STL` directory.
+3. `cmake --preset ARM64EC`
+4. `cmake --build --preset ARM64EC`
 
 # How To Consume
 
@@ -265,6 +297,11 @@ will run the single test found under VSO_0000000_any_calling_conventions.
 * You can invoke `stl-lit` with any arbitrary subdirectory of a test suite. In libcxx this allows you to have finer
 control over what category of tests you would like to run. The following will run all the libcxx map tests.
   + `python tests\utils\stl-lit\stl-lit.py ..\..\llvm-project\libcxx\test\std\containers\associative\map`
+* You can also use the `--filter` option to include tests whose names match a regular expression. The following
+  command will run tests with "atomic_wait" in their names in both the std and libcxx test suites.
+  + `python tests\utils\stl-lit\stl-lit.py ..\..\llvm-project\libcxx\test ..\..\tests\std --filter=atomic_wait`
+* There's also a `--filter-out` option to exclude tests matching a regular expression;
+  `--filter=iota --filter-out=view` would run tests with names matching "iota" but not "view".
 
 ## Interpreting The Results Of Tests
 
@@ -507,8 +544,9 @@ See [CONTRIBUTING.md][] for more information.
 
 # Code Of Conduct
 
-This project has adopted the [Microsoft Open Source Code of Conduct][]. For more information see the
-[Code of Conduct FAQ][] or contact [opencode@microsoft.com][] with any additional questions or comments.
+This project has adopted the [Microsoft Open Source Code of Conduct][].
+
+See [CODE_OF_CONDUCT.md][] for more information.
 
 # License
 
@@ -519,7 +557,7 @@ SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 [Changelog]: https://github.com/microsoft/STL/wiki/Changelog
 [clang-format]: https://clang.llvm.org/docs/ClangFormat.html
 [CMake]: https://cmake.org/download
-[Code of Conduct FAQ]: https://opensource.microsoft.com/codeofconduct/faq/
+[CODE_OF_CONDUCT.md]: CODE_OF_CONDUCT.md
 [Compiler Explorer]: https://godbolt.org
 [CONTRIBUTING.md]: CONTRIBUTING.md
 [Developer Community]: https://aka.ms/feedback/report?space=62
@@ -531,7 +569,7 @@ SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 [LWG issues]: https://cplusplus.github.io/LWG/lwg-toc.html
 [LWG tag]: https://github.com/microsoft/STL/issues?q=is%3Aopen+is%3Aissue+label%3ALWG
 [Microsoft Open Source Code of Conduct]: https://opensource.microsoft.com/codeofconduct/
-[N4971]: https://wg21.link/n4971
+[N4986]: https://wg21.link/N4986
 [NOTICE.txt]: NOTICE.txt
 [Ninja]: https://ninja-build.org
 [STL-CI-badge]: https://dev.azure.com/vclibs/STL/_apis/build/status%2FSTL-CI?branchName=main "STL-CI"
@@ -550,6 +588,5 @@ SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 [libcxx]: https://libcxx.llvm.org
 [lit]: https://llvm.org/docs/CommandGuide/lit.html
 [lit result codes]: https://llvm.org/docs/CommandGuide/lit.html#test-status-results
-[opencode@microsoft.com]: mailto:opencode@microsoft.com
 [redistributables]: https://learn.microsoft.com/en-US/cpp/windows/latest-supported-vc-redist
 [natvis documentation]: https://learn.microsoft.com/en-us/visualstudio/debugger/create-custom-views-of-native-objects

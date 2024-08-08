@@ -52,12 +52,12 @@ private:
 _EXPORT_STD class condition_variable_any { // class for waiting for conditions with any kind of mutex
 public:
     condition_variable_any() : _Myptr{_STD make_shared<mutex>()} {
+#ifdef _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
         _Cnd_init_in_situ(_Mycnd());
+#endif // ^^^ defined(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR) ^^^
     }
 
-    ~condition_variable_any() noexcept {
-        _Cnd_destroy_in_situ(_Mycnd());
-    }
+    ~condition_variable_any() noexcept = default;
 
     condition_variable_any(const condition_variable_any&)            = delete;
     condition_variable_any& operator=(const condition_variable_any&) = delete;
@@ -92,9 +92,7 @@ public:
     template <class _Lock, class _Clock, class _Duration>
     cv_status wait_until(_Lock& _Lck, const chrono::time_point<_Clock, _Duration>& _Abs_time) {
         // wait until time point
-#if _HAS_CXX20
-        static_assert(chrono::is_clock_v<_Clock>, "Clock type required");
-#endif // _HAS_CXX20
+        static_assert(chrono::_Is_clock_v<_Clock>, "Clock type required");
         const auto _Now                  = _Clock::now();
         using _Common_duration           = decltype(_Abs_time - _Now);
         const _Common_duration _Rel_time = (_Abs_time <= _Now) ? _Common_duration::zero() : _Abs_time - _Now;
@@ -124,16 +122,27 @@ public:
             return cv_status::timeout;
         }
 
-        // TRANSITION, ABI: The standard says that we should use a steady clock,
-        // but unfortunately our ABI relies on the system clock.
-        _timespec64 _Tgt;
-        const bool _Clamped     = _To_timespec64_sys_10_day_clamped(_Tgt, _Rel_time);
-        const cv_status _Result = _Wait_until_sys_time(_Lck, &_Tgt);
-        if (_Clamped) {
-            return cv_status::no_timeout;
-        }
+        const auto _Rel_time_ms = _Clamped_rel_time_ms_count(_Rel_time);
 
-        return _Result;
+        // wait for signal with timeout
+        const shared_ptr<mutex> _Ptr = _Myptr; // for immunity to *this destruction
+        const auto _Start            = _CHRONO steady_clock::now();
+        const auto _Target           = _Start + _Rel_time;
+
+        unique_lock<mutex> _Guard{*_Ptr};
+        _Unlock_guard<_Lock> _Unlock_outer{_Lck};
+        const _Thrd_result _Res = _Cnd_timedwait_for_unchecked(_Mycnd(), _Ptr->_Mymtx(), _Rel_time_ms._Count);
+        _Guard.unlock();
+
+        if (_Res == _Thrd_result::_Success) {
+            return cv_status::no_timeout; // Real or WinAPI-internal spurious wake
+        } else if (_Rel_time_ms._Clamped) {
+            return cv_status::no_timeout; // Spuriously wake due to clamped timeout
+        } else if (_CHRONO steady_clock::now() < _Target) {
+            return cv_status::no_timeout; // Spuriously wake due to premature timeout
+        } else {
+            return cv_status::timeout;
+        }
     }
 
     template <class _Lock, class _Rep, class _Period, class _Predicate>
@@ -206,12 +215,8 @@ public:
                 break;
             }
 
-            const auto _Rel_time = _Abs_time - _Now;
-            // TRANSITION, ABI: The standard says that we should use a steady clock,
-            // but unfortunately our ABI relies on the system clock.
-            _timespec64 _Tgt;
-            (void) _To_timespec64_sys_10_day_clamped(_Tgt, _Rel_time);
-            (void) _Cnd_timedwait(_Mycnd(), _Myptr->_Mymtx(), &_Tgt);
+            const unsigned long _Rel_ms_count = _Clamped_rel_time_ms_count(_Abs_time - _Now)._Count;
+            (void) _Cnd_timedwait_for_unchecked(_Mycnd(), _Myptr->_Mymtx(), _Rel_ms_count);
             _Guard_unlocks_before_locking_outer.unlock();
         } // relock
 
@@ -227,26 +232,10 @@ public:
 private:
     shared_ptr<mutex> _Myptr;
 
-    _Aligned_storage_t<_Cnd_internal_imp_size, _Cnd_internal_imp_alignment> _Cnd_storage;
+    _Cnd_internal_imp_t _Cnd_storage{};
 
-    _NODISCARD _Cnd_t _Mycnd() noexcept { // get pointer to _Cnd_internal_imp_t inside _Cnd_storage
-        return reinterpret_cast<_Cnd_t>(&_Cnd_storage);
-    }
-
-    template <class _Lock>
-    cv_status _Wait_until_sys_time(_Lock& _Lck, const _timespec64* const _Abs_time) {
-        // wait for signal with timeout
-        const shared_ptr<mutex> _Ptr = _Myptr; // for immunity to *this destruction
-        unique_lock<mutex> _Guard{*_Ptr};
-        _Unlock_guard<_Lock> _Unlock_outer{_Lck};
-        const _Thrd_result _Res = _Cnd_timedwait(_Mycnd(), _Ptr->_Mymtx(), _Abs_time);
-        _Guard.unlock();
-
-        if (_Res == _Thrd_result::_Success) {
-            return cv_status::no_timeout;
-        } else {
-            return cv_status::timeout;
-        }
+    _NODISCARD _Cnd_t _Mycnd() noexcept {
+        return &_Cnd_storage;
     }
 };
 

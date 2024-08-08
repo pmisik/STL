@@ -34,6 +34,51 @@ struct int128 {
     }
 };
 
+// Also test GH-4688 "<atomic>: atomic_ref<void*> and atomic<void*> lack difference_type"
+template <class T>
+constexpr bool atomic_ref_has_member_difference_type = requires { typename std::atomic_ref<T>::difference_type; };
+
+static_assert(std::is_same_v<std::atomic_ref<signed char>::difference_type, signed char>);
+static_assert(std::is_same_v<std::atomic_ref<short>::difference_type, short>);
+static_assert(std::is_same_v<std::atomic_ref<int>::difference_type, int>);
+static_assert(std::is_same_v<std::atomic_ref<long>::difference_type, long>);
+static_assert(std::is_same_v<std::atomic_ref<long long>::difference_type, long long>);
+static_assert(std::is_same_v<std::atomic_ref<unsigned char>::difference_type, unsigned char>);
+static_assert(std::is_same_v<std::atomic_ref<unsigned short>::difference_type, unsigned short>);
+static_assert(std::is_same_v<std::atomic_ref<unsigned int>::difference_type, unsigned int>);
+static_assert(std::is_same_v<std::atomic_ref<unsigned long>::difference_type, unsigned long>);
+static_assert(std::is_same_v<std::atomic_ref<unsigned long long>::difference_type, unsigned long long>);
+static_assert(std::is_same_v<std::atomic_ref<char>::difference_type, char>);
+#ifdef __cpp_char8_t
+static_assert(std::is_same_v<std::atomic_ref<char8_t>::difference_type, char8_t>);
+#endif // defined(__cpp_char8_t)
+static_assert(std::is_same_v<std::atomic_ref<char16_t>::difference_type, char16_t>);
+static_assert(std::is_same_v<std::atomic_ref<char32_t>::difference_type, char32_t>);
+static_assert(std::is_same_v<std::atomic_ref<wchar_t>::difference_type, wchar_t>);
+
+static_assert(std::is_same_v<std::atomic_ref<float>::difference_type, float>);
+static_assert(std::is_same_v<std::atomic_ref<double>::difference_type, double>);
+static_assert(std::is_same_v<std::atomic_ref<long double>::difference_type, long double>);
+
+static_assert(std::is_same_v<std::atomic_ref<int*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<bool*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<const int*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<volatile bool*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<bigint*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<const volatile int128*>::difference_type, std::ptrdiff_t>);
+
+static_assert(std::is_same_v<std::atomic_ref<void*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<const void*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<volatile void*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<const volatile void*>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<void (*)()>::difference_type, std::ptrdiff_t>);
+static_assert(std::is_same_v<std::atomic_ref<bigint (*)(int128)>::difference_type, std::ptrdiff_t>);
+
+static_assert(!atomic_ref_has_member_difference_type<bool>);
+static_assert(!atomic_ref_has_member_difference_type<std::nullptr_t>);
+static_assert(!atomic_ref_has_member_difference_type<bigint>);
+static_assert(!atomic_ref_has_member_difference_type<int128>);
+
 
 // code reuse of ../P1135R6_atomic_flag_test/test.cpp
 
@@ -373,6 +418,40 @@ void test_incomplete_associated_class_all() { // COMPILE-ONLY
 }
 #endif // ^^^ no workaround ^^^
 
+// GH-4472 "<atomic>: With _STD_ATOMIC_ALWAYS_USE_CMPXCHG16B defined to 1,
+// atomic_ref<16 bytes> does not report is_lock_free and is_always_lock_free correctly"
+void test_gh_4472() {
+    struct two_pointers_t {
+        void* left;
+        void* right;
+    };
+
+    alignas(std::atomic_ref<two_pointers_t>::required_alignment) two_pointers_t two_pointers;
+
+    static_assert(std::atomic_ref<two_pointers_t>::required_alignment == sizeof(two_pointers_t));
+
+    static_assert(std::atomic_ref<two_pointers_t>::is_always_lock_free);
+
+    std::atomic_ref<two_pointers_t> ar{two_pointers};
+    assert(ar.is_lock_free());
+}
+
+// GH-4728 "<atomic>: On x64, atomic_ref::is_lock_free() incorrectly returns true when it shouldn't"
+void test_gh_4728() {
+    struct Large {
+        char str[100]{};
+    };
+
+    alignas(std::atomic_ref<Large>::required_alignment) Large lg{};
+
+    static_assert(std::atomic_ref<Large>::required_alignment == alignof(Large));
+
+    static_assert(!std::atomic_ref<Large>::is_always_lock_free);
+
+    std::atomic_ref<Large> ar{lg};
+    assert(!ar.is_lock_free());
+}
+
 int main() {
     test_ops<false, char>();
     test_ops<false, signed char>();
@@ -425,4 +504,6 @@ int main() {
     test_ptr_ops<long*>();
 
     test_gh_1497();
+    test_gh_4472();
+    test_gh_4728();
 }

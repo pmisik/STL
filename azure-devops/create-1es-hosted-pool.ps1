@@ -13,8 +13,8 @@ $ErrorActionPreference = 'Stop'
 
 $CurrentDate = Get-Date
 
-$Location = 'eastus'
-$VMSize = 'Standard_D32ds_v5'
+$Location = 'eastus2'
+$VMSize = 'Standard_D32ads_v5'
 $ProtoVMName = 'PROTOTYPE'
 $ImagePublisher = 'MicrosoftWindowsServer'
 $ImageOffer = 'WindowsServer'
@@ -60,67 +60,22 @@ function New-Password {
   Param([int]$Length = 32)
 
   # This 64-character alphabet generates 6 bits of entropy per character.
-  # The power-of-2 alphabet size allows us to select a character by masking a random Byte with bitwise-AND.
-  $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
-  $mask = 63
-  if ($alphabet.Length -ne 64) {
-    throw 'Bad alphabet length'
-  }
+  $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'.ToCharArray()
 
-  [Byte[]]$randomData = [Byte[]]::new($Length)
-  $rng = $null
-  try {
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $rng.GetBytes($randomData)
-  }
-  finally {
-    if ($null -ne $rng) {
-      $rng.Dispose()
-    }
-  }
-
-  $result = ''
+  [SecureString] $result = [SecureString]::new()
   for ($idx = 0; $idx -lt $Length; $idx++) {
-    $result += $alphabet[$randomData[$idx] -band $mask]
+    $result.AppendChar((Get-SecureRandom -InputObject $alphabet))
   }
 
   return $result
-}
-
-<#
-.SYNOPSIS
-Waits for the shutdown of the specified resource.
-
-.DESCRIPTION
-Wait-Shutdown takes a VM, and checks if there's a 'PowerState/stopped'
-code; if there is, it returns. If there isn't, it waits 10 seconds and
-tries again.
-
-.PARAMETER ResourceGroupName
-The name of the resource group to look up the VM in.
-
-.PARAMETER Name
-The name of the virtual machine to wait on.
-#>
-function Wait-Shutdown {
-  [CmdletBinding(PositionalBinding=$false)]
-  Param(
-    [Parameter(Mandatory)][string]$ResourceGroupName,
-    [Parameter(Mandatory)][string]$Name
-  )
-
-  Write-Host "Waiting for $Name to stop..."
-  $StoppedCode = 'PowerState/stopped'
-  while ($StoppedCode -notin (Get-AzVM -ResourceGroupName $ResourceGroupName -Name $Name -Status).Statuses.Code) {
-    Write-Host '... not stopped yet, sleeping for 10 seconds'
-    Start-Sleep -Seconds 10
-  }
 }
 
 ####################################################################################################
 Display-ProgressBar -Status 'Silencing breaking change warnings'
 
 # https://aka.ms/azps-changewarnings
+$Env:SuppressAzurePowerShellBreakingChangeWarnings = 'true'
+
 Update-AzConfig `
   -DisplayBreakingChangeWarning $false `
   -Scope 'Process' | Out-Null
@@ -143,8 +98,7 @@ New-AzResourceGroup `
 ####################################################################################################
 Display-ProgressBar -Status 'Creating credentials'
 
-$AdminPW = New-Password
-$AdminPWSecure = ConvertTo-SecureString $AdminPW -AsPlainText -Force
+$AdminPWSecure = New-Password
 $Credential = New-Object System.Management.Automation.PSCredential ('AdminUser', $AdminPWSecure)
 
 ####################################################################################################
@@ -183,11 +137,11 @@ $Nic = New-AzNetworkInterface `
 ####################################################################################################
 Display-ProgressBar -Status 'Creating prototype VM'
 
+# Previously: -Priority 'Spot'
 $VM = New-AzVMConfig `
-  -Name $ProtoVMName `
+  -VMName $ProtoVMName `
   -VMSize $VMSize `
-  -Priority 'Spot' `
-  -MaxPrice -1
+  -Priority 'Regular'
 
 $VM = Set-AzVMOperatingSystem `
   -VM $VM `
@@ -211,79 +165,78 @@ $VM = Set-AzVMBootDiagnostic `
   -VM $VM `
   -Disable
 
-$VM = Set-AzVMSecurityProfile `
-  -VM $VM `
-  -SecurityType 'TrustedLaunch'
-
-$VM = Set-AzVMUefi `
-  -VM $VM `
-  -EnableVtpm $true `
-  -EnableSecureBoot $true
-
 New-AzVm `
   -ResourceGroupName $ResourceGroupName `
   -Location $Location `
   -VM $VM | Out-Null
-
-####################################################################################################
-Display-ProgressBar -Status 'Running provision-image.ps1 in VM'
-
-$ProvisionImageResult = Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroupName `
-  -VMName $ProtoVMName `
-  -CommandId 'RunPowerShellScript' `
-  -ScriptPath "$PSScriptRoot\provision-image.ps1" `
-  -Parameter @{ 'AdminUserPassword' = $AdminPW; }
-
-Write-Host "provision-image.ps1 output: $($ProvisionImageResult.value.Message)"
-
-####################################################################################################
-Display-ProgressBar -Status 'Restarting VM'
-
-Restart-AzVM -ResourceGroupName $ResourceGroupName -Name $ProtoVMName | Out-Null
-
-####################################################################################################
-Display-ProgressBar -Status 'Sleeping after restart'
-
-# The VM appears to be busy immediately after restarting.
-# This workaround waits for a minute before attempting to run sysprep.ps1.
-Start-Sleep -Seconds 60
-
-####################################################################################################
-Display-ProgressBar -Status 'Running sysprep.ps1 in VM'
-
-Invoke-AzVMRunCommand `
-  -ResourceGroupName $ResourceGroupName `
-  -VMName $ProtoVMName `
-  -CommandId 'RunPowerShellScript' `
-  -ScriptPath "$PSScriptRoot\sysprep.ps1" | Out-Null
-
-####################################################################################################
-Display-ProgressBar -Status 'Waiting for VM to shut down'
-
-Wait-Shutdown -ResourceGroupName $ResourceGroupName -Name $ProtoVMName
-
-####################################################################################################
-Display-ProgressBar -Status 'Stopping VM'
-
-Stop-AzVM `
-  -ResourceGroupName $ResourceGroupName `
-  -Name $ProtoVMName `
-  -Force | Out-Null
-
-####################################################################################################
-Display-ProgressBar -Status 'Generalizing VM'
-
-Set-AzVM `
-  -ResourceGroupName $ResourceGroupName `
-  -Name $ProtoVMName `
-  -Generalized | Out-Null
 
 $VM = Get-AzVM `
   -ResourceGroupName $ResourceGroupName `
   -Name $ProtoVMName
 
 $PrototypeOSDiskName = $VM.StorageProfile.OsDisk.Name
+
+####################################################################################################
+Display-ProgressBar -Status 'Running provision-image.ps1 in VM'
+
+$ProvisionImageResult = Invoke-AzVMRunCommand `
+  -ResourceId $VM.ID `
+  -CommandId 'RunPowerShellScript' `
+  -ScriptPath "$PSScriptRoot\provision-image.ps1"
+
+Write-Host $ProvisionImageResult.value.Message
+
+if ($ProvisionImageResult.value.Message -cnotmatch 'PROVISION_IMAGE_SUCCEEDED') {
+  Write-Host 'provision-image.ps1 failed, stopping VM...'
+
+  Stop-AzVM `
+    -Id $VM.ID `
+    -Force | Out-Null
+
+  Write-Error "VM stopped. Remember to delete unusable resource group: $ResourceGroupName"
+}
+
+####################################################################################################
+Display-ProgressBar -Status 'Restarting VM'
+
+Restart-AzVM `
+  -Id $VM.ID | Out-Null
+
+####################################################################################################
+Display-ProgressBar -Status 'Sleeping after restart'
+
+# The VM appears to be busy immediately after restarting.
+# This workaround waits for a minute before attempting to run sysprep.
+Start-Sleep -Seconds 60
+
+####################################################################################################
+Display-ProgressBar -Status 'Running sysprep in VM'
+
+Invoke-AzVMRunCommand `
+  -ResourceId $VM.ID `
+  -CommandId 'RunPowerShellScript' `
+  -ScriptString 'C:\Windows\system32\sysprep\sysprep.exe /oobe /generalize /mode:vm /shutdown' | Out-Null
+
+####################################################################################################
+Display-ProgressBar -Status 'Waiting for VM to shut down'
+
+while ('PowerState/stopped' -notin (Get-AzVM -ResourceId $VM.ID -Status).Statuses.Code) {
+  Start-Sleep -Seconds 10
+}
+
+####################################################################################################
+Display-ProgressBar -Status 'Stopping VM'
+
+Stop-AzVM `
+  -Id $VM.ID `
+  -Force | Out-Null
+
+####################################################################################################
+Display-ProgressBar -Status 'Generalizing VM'
+
+Set-AzVM `
+  -Id $VM.ID `
+  -Generalized | Out-Null
 
 ####################################################################################################
 Display-ProgressBar -Status 'Creating gallery'
@@ -331,7 +284,7 @@ $ImageVersion = New-AzGalleryImageVersion `
   -GalleryName $GalleryName `
   -GalleryImageDefinitionName $ImageDefinitionName `
   -Name $ImageVersionName `
-  -SourceImageId $VM.ID
+  -SourceImageVMId $VM.ID
 
 ####################################################################################################
 Display-ProgressBar -Status 'Registering CloudTest resource provider'
@@ -359,7 +312,7 @@ $PoolName = $ResourceGroupName + '-Pool'
 $PoolProperties = @{
   'organization' = 'https://dev.azure.com/vclibs'
   'projects' = @('STL')
-  'sku' = @{ 'name' = $VMSize; 'tier' = 'StandardSSD'; 'enableSpot' = $true; }
+  'sku' = @{ 'name' = $VMSize; 'tier' = 'StandardSSD'; 'enableSpot' = $false; }
   'images' = @(@{ 'imageName' = $ImageName; 'poolBufferPercentage' = '100'; })
   'maxPoolSize' = 64
   'agentProfile' = @{ 'type' = 'Stateless'; }
@@ -416,4 +369,9 @@ Remove-AzNetworkSecurityGroup `
 Write-Progress -Activity $ProgressActivity -Completed
 
 Write-Host "Elapsed time: $(((Get-Date) - $CurrentDate).ToString('hh\:mm\:ss'))"
-Write-Host "Finished creating pool: $PoolName"
+
+if ((Get-AzResource -ResourceGroupName $ResourceGroupName -Name $PoolName) -ne $null) {
+  Write-Host "Created pool: $PoolName"
+} else {
+  Write-Error "Failed to create pool: $PoolName"
+}

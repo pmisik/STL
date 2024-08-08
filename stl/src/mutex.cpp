@@ -5,11 +5,10 @@
 #include <cstdlib>
 #include <internal_shared.h>
 #include <mutex>
+#include <new>
 #include <type_traits>
 #include <xthreads.h>
 #include <xtimec.h>
-
-#include "primitives.hpp"
 
 extern "C" {
 
@@ -36,9 +35,9 @@ _CRTIMP2 void __cdecl __set_stl_sync_api_mode(__stl_sync_api_modes_enum) noexcep
     return reinterpret_cast<PSRWLOCK>(&mtx->_Critical_section._M_srw_lock);
 }
 
-// TRANSITION, only used when constexpr mutex constructor is not enabled
+// TRANSITION, ABI: preserved for binary compatibility (and _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 _CRTIMP2_PURE void __cdecl _Mtx_init_in_situ(_Mtx_t mtx, int type) noexcept { // initialize mutex in situ
-    Concurrency::details::create_stl_critical_section(&mtx->_Critical_section);
+    new (&mtx->_Critical_section) _Stl_critical_section;
     mtx->_Thread_id = -1;
     mtx->_Type      = type;
     mtx->_Count     = 0;
@@ -50,6 +49,7 @@ _CRTIMP2_PURE void __cdecl _Mtx_destroy_in_situ(_Mtx_t mtx) noexcept { // destro
     (void) mtx;
 }
 
+// TRANSITION, ABI: preserved for binary compatibility
 _CRTIMP2_PURE _Thrd_result __cdecl _Mtx_init(_Mtx_t* mtx, int type) noexcept { // initialize mutex
     *mtx = nullptr;
 

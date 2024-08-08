@@ -136,7 +136,7 @@ public:
         return _Tmp;
     }
 
-    _NODISCARD_FRIEND _CONSTEXPR20 _Vector_const_iterator operator+(
+    _NODISCARD friend _CONSTEXPR20 _Vector_const_iterator operator+(
         const difference_type _Off, _Vector_const_iterator _Next) noexcept {
         _Next += _Off;
         return _Next;
@@ -316,7 +316,7 @@ public:
         return _Tmp;
     }
 
-    _NODISCARD_FRIEND _CONSTEXPR20 _Vector_iterator operator+(
+    _NODISCARD friend _CONSTEXPR20 _Vector_iterator operator+(
         const difference_type _Off, _Vector_iterator _Next) noexcept {
         _Next += _Off;
         return _Next;
@@ -1707,9 +1707,9 @@ public:
         auto& _My_data   = _Mypair._Myval2;
         pointer& _Mylast = _My_data._Mylast;
 
-#if _ITERATOR_DEBUG_LEVEL == 2
+#if _CONTAINER_DEBUG_LEVEL > 0
         _STL_VERIFY(_My_data._Myfirst != _Mylast, "vector empty before pop");
-#endif // _ITERATOR_DEBUG_LEVEL == 2
+#endif // _CONTAINER_DEBUG_LEVEL > 0
 
         _Orphan_range(_Mylast - 1, _Mylast);
         _Alty_traits::destroy(_Getal(), _Unfancy(_Mylast - 1));
@@ -1874,8 +1874,7 @@ public:
     }
 
     _NODISCARD _CONSTEXPR20 size_type max_size() const noexcept {
-        return (_STD min)(
-            static_cast<size_type>((numeric_limits<difference_type>::max)()), _Alty_traits::max_size(_Getal()));
+        return (_STD min)(static_cast<size_type>(_STD _Max_limit<difference_type>()), _Alty_traits::max_size(_Getal()));
     }
 
     _NODISCARD _CONSTEXPR20 size_type capacity() const noexcept {
@@ -2077,7 +2076,7 @@ private:
             } else if constexpr (sizeof...(_Val) == 2) {
                 _My_data._Mylast = _STD _Uninitialized_copy(_STD forward<_Valty>(_Val)..., _My_data._Myfirst, _Al);
             } else {
-                static_assert(_Always_false<_Ty>, "Should be unreachable");
+                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected number of arguments
             }
             _ASAN_VECTOR_CREATE;
             _Guard._Target = nullptr;
@@ -2209,8 +2208,7 @@ vector(_Iter, _Iter, _Alloc = _Alloc()) -> vector<_Iter_value_t<_Iter>, _Alloc>;
 #endif // _HAS_CXX17
 
 #if _HAS_CXX23
-template <_RANGES input_range _Rng, class _Alloc = allocator<_RANGES range_value_t<_Rng>>,
-    enable_if_t<_Is_allocator<_Alloc>::value, int> = 0>
+template <_RANGES input_range _Rng, _Allocator_for_container _Alloc = allocator<_RANGES range_value_t<_Rng>>>
 vector(from_range_t, _Rng&&, _Alloc = _Alloc()) -> vector<_RANGES range_value_t<_Rng>, _Alloc>;
 #endif // _HAS_CXX23
 
@@ -2570,7 +2568,7 @@ public:
         return _Tmp;
     }
 
-    _NODISCARD_FRIEND _CONSTEXPR20 _Vb_const_iterator operator+(
+    _NODISCARD friend _CONSTEXPR20 _Vb_const_iterator operator+(
         const difference_type _Off, _Vb_const_iterator _Right) noexcept {
         _Right += _Off;
         return _Right;
@@ -2743,7 +2741,7 @@ public:
         return _Tmp;
     }
 
-    _NODISCARD_FRIEND _CONSTEXPR20 _Vb_iterator operator+(const difference_type _Off, _Vb_iterator _Right) noexcept {
+    _NODISCARD friend _CONSTEXPR20 _Vb_iterator operator+(const difference_type _Off, _Vb_iterator _Right) noexcept {
         _Right += _Off;
         return _Right;
     }
@@ -3149,7 +3147,7 @@ public:
     }
 
     _NODISCARD _CONSTEXPR20 size_type max_size() const noexcept {
-        constexpr auto _Diff_max  = static_cast<size_type>((numeric_limits<difference_type>::max)());
+        constexpr auto _Diff_max  = static_cast<size_type>(_STD _Max_limit<difference_type>());
         const size_type _Ints_max = this->_Myvec.max_size();
         if (_Ints_max > _Diff_max / _VBITS) { // max_size bound by difference_type limits
             return _Diff_max;
@@ -3578,7 +3576,9 @@ namespace pmr {
 #endif // _HAS_CXX17
 
 #if _HAS_CXX23
-template <class _Ty, class _CharT>
+// Per LWG-3997, `_CharT` in library-provided `formatter` specializations is
+// constrained to character types supported by `format`.
+template <class _Ty, _Format_supported_charT _CharT>
     requires _Is_specialization_v<_Ty, _Vb_reference>
 struct formatter<_Ty, _CharT> {
 private:
@@ -3598,10 +3598,10 @@ public:
 #endif // _HAS_CXX23
 
 template <class _Alloc, bool _RequiresMutable>
-_INLINE_VAR constexpr bool _Is_vb_iterator<_Vb_iterator<_Alloc>, _RequiresMutable> = true;
+constexpr bool _Is_vb_iterator<_Vb_iterator<_Alloc>, _RequiresMutable> = true;
 
 template <class _Alloc>
-_INLINE_VAR constexpr bool _Is_vb_iterator<_Vb_const_iterator<_Alloc>, false> = true;
+constexpr bool _Is_vb_iterator<_Vb_const_iterator<_Alloc>, false> = true;
 
 template <class _VbIt>
 _CONSTEXPR20 void _Fill_vbool(_VbIt _First, const _VbIt _Last, const bool _Val) noexcept {

@@ -343,10 +343,10 @@ constexpr bool test_one(Rng&& rng, Expected&& expected) {
         }
 
         // Validate common_view::begin and common_view::end
-        STATIC_ASSERT(CanMemberBegin<R>);
-        STATIC_ASSERT(CanBegin<const R&> == range<const V>);
-        STATIC_ASSERT(CanMemberEnd<R>);
-        STATIC_ASSERT(CanEnd<const R&> == range<const V>);
+        static_assert(CanMemberBegin<R>);
+        static_assert(CanBegin<const R&> == range<const V>);
+        static_assert(CanMemberEnd<R>);
+        static_assert(CanEnd<const R&> == range<const V>);
         if (!is_constant_evaluated()) {
             non_literal_parts<V>(r, expected);
         }
@@ -541,6 +541,34 @@ constexpr bool test_lwg3717() {
     return true;
 }
 
+constexpr bool test_lwg_4012() {
+    struct simple_view_with_difference_on_const : ranges::view_interface<simple_view_with_difference_on_const> {
+        constexpr difference_type_only_iterator<int> begin() noexcept {
+            return {nullptr};
+        }
+        constexpr difference_type_only_sentinel<int> end() noexcept {
+            return {nullptr};
+        }
+        constexpr difference_type_only_iterator<int> begin() const noexcept {
+            return {p_};
+        }
+        constexpr difference_type_only_sentinel<int> end() const noexcept {
+            return {p_};
+        }
+
+        int* p_;
+    };
+
+    int n{};
+    auto cv = views::common(simple_view_with_difference_on_const{{}, &n});
+
+    assert(cv.begin() == as_const(cv).begin());
+    assert(cv.begin() == as_const(cv).end());
+    assert(as_const(cv).begin() == cv.end());
+
+    return true;
+}
+
 int main() {
     // Get full instantiation coverage
     static_assert((test_in<instantiator, const int>(), true));
@@ -551,4 +579,7 @@ int main() {
 
     assert(test_lwg3717<int>());
     assert(test_lwg3717<const int>());
+
+    static_assert(test_lwg_4012());
+    test_lwg_4012();
 }

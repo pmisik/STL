@@ -10,9 +10,6 @@
 
 using namespace std;
 
-template <class>
-constexpr bool always_false = false;
-
 struct only_copy_constructible {
     int val;
 
@@ -24,12 +21,12 @@ struct only_copy_constructible {
 
     template <class T = void>
     auto operator&() const {
-        static_assert(always_false<T>);
+        static_assert(false);
     }
 
     template <class U>
     auto operator,(U&&) const {
-        static_assert(always_false<U>);
+        static_assert(false);
     }
 };
 
@@ -51,6 +48,13 @@ constexpr bool test_one_type(T value, Args&&... args) {
     // validate CTAD and const T& constructor
     same_as<R> auto r0 = ranges::single_view{value};
     const R& cr0       = r0;
+
+    // validate member empty
+    static_assert(same_as<decltype(R::empty()), bool>);
+    static_assert(R::empty() == false);
+    static_assert(noexcept(R::empty()));
+    static_assert(noexcept(ranges::empty(r0)));
+    static_assert(noexcept(ranges::empty(cr0)));
 
     // validate member size
     static_assert(same_as<decltype(R::size()), size_t>);

@@ -706,7 +706,7 @@ _EXPORT_STD template <class _Fty>
 class function;
 
 template <class _Ty>
-_INLINE_VAR constexpr bool _Testable_callable_v =
+constexpr bool _Testable_callable_v =
     disjunction_v<is_pointer<_Ty>, _Is_specialization<_Ty, function>, is_member_pointer<_Ty>>;
 
 template <class _Ty>
@@ -745,8 +745,8 @@ private:
 _INLINE_VAR constexpr size_t _Space_size = (_Small_object_num_ptrs - 1) * sizeof(void*);
 
 template <class _Impl> // determine whether _Impl must be dynamically allocated
-_INLINE_VAR constexpr bool _Is_large = sizeof(_Impl) > _Space_size || alignof(_Impl) > alignof(max_align_t)
-                                    || !_Impl::_Nothrow_move::value;
+constexpr bool _Is_large = sizeof(_Impl) > _Space_size || alignof(_Impl) > alignof(max_align_t)
+                        || !_Impl::_Nothrow_move::value;
 
 #if _HAS_FUNCTION_ALLOCATOR_SUPPORT
 template <class _Callable, class _Alloc, class _Rx, class... _Types>
@@ -1391,7 +1391,7 @@ void __stdcall _Function_destroy_large(_Move_only_function_data& _Self) noexcept
 }
 
 template <class _Vt>
-inline constexpr size_t _Function_small_copy_size = // We copy Impl* and the functor data at once
+constexpr size_t _Function_small_copy_size = // We copy Impl* and the functor data at once
     _Move_only_function_data::_Buf_offset<_Vt> // Impl* plus possible alignment
     + (size_t{sizeof(_Vt) + sizeof(void*) - 1} & ~size_t{sizeof(void*) - 1}); // size in whole pointers
 
@@ -1621,12 +1621,10 @@ public:
 
 template <class... _Signature>
 class _Move_only_function_call {
-    static_assert((_Always_false<_Signature> || ...),
+    static_assert(_Always_false<integral_constant<size_t, sizeof...(_Signature)>>,
         "std::move_only_function only accepts function types as template arguments, "
-        "with possibly const/ref/noexcept qualifiers.");
-
-    static_assert(sizeof...(_Signature) > 0,
-        "Unlike std::function, std::move_only_function does not define class template argument deduction guides.");
+        "with possibly const/ref/noexcept qualifiers. Also, unlike std::function, "
+        "std::move_only_function does not define class template argument deduction guides.");
 };
 
 // A script to generate the specializations is at
@@ -1868,7 +1866,8 @@ public:
 
     move_only_function(move_only_function&&) noexcept = default;
 
-    template <class _Fn, enable_if_t<_Enable_one_arg_constructor<_Fn>, int> = 0>
+    template <class _Fn>
+        requires _Enable_one_arg_constructor<_Fn>
     move_only_function(_Fn&& _Callable) {
         using _Vt = decay_t<_Fn>;
         static_assert(is_constructible_v<_Vt, _Fn>, "_Vt should be constructible from _Fn. "
@@ -1885,7 +1884,8 @@ public:
         this->template _Construct_with_fn<_Vt, _VtInvQuals>(_STD forward<_Fn>(_Callable));
     }
 
-    template <class _Fn, class... _CTypes, enable_if_t<_Enable_in_place_constructor<_Fn, _CTypes...>, int> = 0>
+    template <class _Fn, class... _CTypes>
+        requires _Enable_in_place_constructor<_Fn, _CTypes...>
     explicit move_only_function(in_place_type_t<_Fn>, _CTypes&&... _Args) {
         using _Vt = decay_t<_Fn>;
         static_assert(is_same_v<_Vt, _Fn>, "_Vt should be the same type as _Fn. (N4950 [func.wrap.move.ctor]/12)");
@@ -1894,8 +1894,8 @@ public:
         this->template _Construct_with_fn<_Vt, _VtInvQuals>(_STD forward<_CTypes>(_Args)...);
     }
 
-    template <class _Fn, class _Ux, class... _CTypes,
-        enable_if_t<_Enable_in_place_list_constructor<_Fn, _Ux, _CTypes...>, int> = 0>
+    template <class _Fn, class _Ux, class... _CTypes>
+        requires _Enable_in_place_list_constructor<_Fn, _Ux, _CTypes...>
     explicit move_only_function(in_place_type_t<_Fn>, initializer_list<_Ux> _Li, _CTypes&&... _Args) {
         using _Vt = decay_t<_Fn>;
         static_assert(is_same_v<_Vt, _Fn>, "_Vt should be the same type as _Fn. (N4950 [func.wrap.move.ctor]/18)");
@@ -1925,7 +1925,8 @@ public:
         return *this;
     }
 
-    template <class _Fn, enable_if_t<is_constructible_v<move_only_function, _Fn>, int> = 0>
+    template <class _Fn>
+        requires is_constructible_v<move_only_function, _Fn>
     move_only_function& operator=(_Fn&& _Callable) {
         this->_Move_assign(move_only_function{_STD forward<_Fn>(_Callable)});
         return *this;
@@ -1945,7 +1946,7 @@ public:
         _Fn1._Swap(_Fn2);
     }
 
-    _NODISCARD_FRIEND bool operator==(const move_only_function& _This, nullptr_t) noexcept {
+    _NODISCARD friend bool operator==(const move_only_function& _This, nullptr_t) noexcept {
         return _This._Is_null();
     }
 };
@@ -1972,7 +1973,7 @@ template <class _Tx>
 struct is_placeholder<const volatile _Tx> : is_placeholder<_Tx>::type {}; // ignore cv-qualifiers
 
 _EXPORT_STD template <class _Ty>
-_INLINE_VAR constexpr int is_placeholder_v = is_placeholder<_Ty>::value;
+constexpr int is_placeholder_v = is_placeholder<_Ty>::value;
 
 template <class _Ret, class _Fx, class... _Types>
 class _Binder;
@@ -1993,7 +1994,7 @@ template <class _Tx>
 struct is_bind_expression<const volatile _Tx> : is_bind_expression<_Tx>::type {}; // ignore cv-qualifiers
 
 _EXPORT_STD template <class _Ty>
-_INLINE_VAR constexpr bool is_bind_expression_v = is_bind_expression<_Ty>::value;
+constexpr bool is_bind_expression_v = is_bind_expression<_Ty>::value;
 
 template <class _Cv_TiD, bool = _Is_specialization_v<remove_cv_t<_Cv_TiD>, reference_wrapper>,
     bool = is_bind_expression_v<_Cv_TiD>, int = is_placeholder_v<_Cv_TiD>>
@@ -2102,10 +2103,10 @@ concept _Can_call_binder = requires(_CvFD& _Fx, _CvBoundTuple& _Bound_tuple, _Un
 };
 #else // ^^^ concept available / concept unavailable vvv
 template <class _Ret, class _CvFD, class _IntSeq, class _CvBoundTuple, class _UnboundTuple, class = void>
-_INLINE_VAR constexpr bool _Can_call_binder = false;
+constexpr bool _Can_call_binder = false;
 
 template <class _Ret, class _CvFD, class _IntSeq, class _CvBoundTuple, class _UnboundTuple>
-_INLINE_VAR constexpr bool _Can_call_binder<_Ret, _CvFD, _IntSeq, _CvBoundTuple, _UnboundTuple,
+constexpr bool _Can_call_binder<_Ret, _CvFD, _IntSeq, _CvBoundTuple, _UnboundTuple,
     void_t<decltype(_STD _Call_binder(_Invoker_ret<_Ret>{}, _IntSeq{}, _STD declval<_CvFD&>(),
         _STD declval<_CvBoundTuple&>(), _STD declval<_UnboundTuple>()))>> = true;
 #endif // ^^^ concept unavailable ^^^
@@ -2245,8 +2246,8 @@ private:
     _STL_INTERNAL_STATIC_ASSERT((is_same_v<_Types, decay_t<_Types>> && ...));
 
 public:
-    template <class _FxInit, class... _TypesInit,
-        enable_if_t<sizeof...(_TypesInit) != 0 || !is_same_v<remove_cvref_t<_FxInit>, _Front_binder>, int> = 0>
+    template <class _FxInit, class... _TypesInit>
+        requires (sizeof...(_TypesInit) != 0 || !is_same_v<remove_cvref_t<_FxInit>, _Front_binder>)
     constexpr explicit _Front_binder(_FxInit&& _Func, _TypesInit&&... _Args)
         : _Mypair(_One_then_variadic_args_t{}, _STD forward<_FxInit>(_Func), _STD forward<_TypesInit>(_Args)...) {}
 
@@ -2338,8 +2339,8 @@ private:
     _STL_INTERNAL_STATIC_ASSERT((is_same_v<_Types, decay_t<_Types>> && ...));
 
 public:
-    template <class _FxInit, class... _TypesInit,
-        enable_if_t<sizeof...(_TypesInit) != 0 || !is_same_v<remove_cvref_t<_FxInit>, _Back_binder>, int> = 0>
+    template <class _FxInit, class... _TypesInit>
+        requires (sizeof...(_TypesInit) != 0 || !is_same_v<remove_cvref_t<_FxInit>, _Back_binder>)
     constexpr explicit _Back_binder(_FxInit&& _Func, _TypesInit&&... _Args)
         : _Mypair(_One_then_variadic_args_t{}, _STD forward<_FxInit>(_Func), _STD forward<_TypesInit>(_Args)...) {}
 
@@ -2607,7 +2608,7 @@ public:
             } else if constexpr (_Del == _Deletion_kind::_Normal_array) {
                 delete[] _Ptr;
             } else {
-                static_assert(_Always_false<_Ty>, "Unknown _Deletion_kind.");
+                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
             }
         }
     }
@@ -2640,7 +2641,7 @@ void _Build_boyer_moore_delta_2_table(_Iter_diff_t<_RanItPat>* const _Shifts, co
         return;
     }
 
-    if ((numeric_limits<_Diff>::max)() - _Pat_size < _Pat_size) {
+    if (_STD _Max_limit<_Diff>() - _Pat_size < _Pat_size) {
         _Xlength_error("Boyer-Moore pattern is too long");
     }
 

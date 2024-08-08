@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include <is_permissive.hpp> // noexcept operator possibly gives wrong values in permissive modes
+
 using namespace std;
 
 enum class IsDefaultConstructible : bool { Not, Yes };
@@ -82,31 +84,31 @@ namespace test_unexpected {
         // [expected.un.ctor]
         const int& input = 1;
         Unexpect in_place_lvalue_constructed{in_place, input};
-        static_assert(noexcept(Unexpect{in_place, input}) == copy_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{in_place, input}) == copy_construction_is_noexcept || is_permissive);
         assert(in_place_lvalue_constructed == Unexpect{test_error{1}});
 
         Unexpect in_place_rvalue_constructed{in_place, 42};
-        static_assert(noexcept(Unexpect{in_place, 42}) == move_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{in_place, 42}) == move_construction_is_noexcept || is_permissive);
         assert(in_place_rvalue_constructed == Unexpect{test_error{42}});
 
         Unexpect in_place_ilist_lvalue_constructed{in_place, {2}, input};
-        static_assert(noexcept(Unexpect{in_place, {2}, input}) == copy_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{in_place, {2}, input}) == copy_construction_is_noexcept || is_permissive);
         assert(in_place_ilist_lvalue_constructed == Unexpect{test_error{1}});
 
         Unexpect in_place_ilist_rvalue_constructed{in_place, {2}, 1337};
-        static_assert(noexcept(Unexpect{in_place, {2}, 1337}) == move_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{in_place, {2}, 1337}) == move_construction_is_noexcept || is_permissive);
         assert(in_place_ilist_rvalue_constructed == Unexpect{test_error{1337}});
 
         Unexpect base_error_constructed{test_error{3}};
-        static_assert(noexcept(Unexpect{test_error{3}}) == move_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{test_error{3}}) == move_construction_is_noexcept || is_permissive);
         assert(base_error_constructed.error()._val == 3);
 
         Unexpect conversion_error_constructed{convertible{4}};
-        static_assert(noexcept(Unexpect{convertible{4}}) == move_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{convertible{4}}) == move_construction_is_noexcept || is_permissive);
         assert(conversion_error_constructed.error()._val == 4);
 
         Unexpect brace_error_constructed{{5}};
-        static_assert(noexcept(Unexpect{{5}}) == move_construction_is_noexcept);
+        static_assert(noexcept(Unexpect{{5}}) == move_construction_is_noexcept || is_permissive);
         assert(brace_error_constructed.error()._val == 5);
 
         // [expected.un.eq]
@@ -500,12 +502,12 @@ namespace test_expected {
             const Expected copy_constructed_value{const_input_value};
             assert(copy_constructed_value);
             assert(copy_constructed_value.value() == 3);
-            static_assert(noexcept(Expected{const_input_value}) == should_be_noexcept);
+            static_assert(noexcept(Expected{const_input_value}) == should_be_noexcept || is_permissive);
 
             const Expected move_constructed_value{Input{}};
             assert(move_constructed_value);
             assert(move_constructed_value.value() == 42);
-            static_assert(noexcept(Expected{Input{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{}}) == should_be_noexcept || is_permissive);
 
             const Expected brace_constructed_value{{}};
             assert(brace_constructed_value);
@@ -528,7 +530,7 @@ namespace test_expected {
             const Expected move_constructed_value{Input{in_place}};
             assert(move_constructed_value);
             assert(move_constructed_value.value() == 42);
-            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept || is_permissive);
 
             const Input const_input_error{unexpect};
             const Expected copy_constructed_error{const_input_error};
@@ -539,7 +541,7 @@ namespace test_expected {
             const Expected move_constructed_error{Input{unexpect}};
             assert(!move_constructed_error);
             assert(move_constructed_error.error() == 42);
-            static_assert(noexcept(Expected{Input{unexpect}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{unexpect}}) == should_be_noexcept || is_permissive);
         }
 
         { // converting from unexpected
@@ -550,12 +552,12 @@ namespace test_expected {
             const Expected copy_constructed{const_input};
             assert(!copy_constructed);
             assert(copy_constructed.error() == 3);
-            static_assert(noexcept(Expected{const_input}) == should_be_noexcept);
+            static_assert(noexcept(Expected{const_input}) == should_be_noexcept || is_permissive);
 
             const Expected move_constructed{Input{in_place}};
             assert(!move_constructed);
             assert(move_constructed.error() == 42);
-            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept || is_permissive);
         }
 
         { // in place payload
@@ -568,12 +570,12 @@ namespace test_expected {
             const Expected value_constructed{in_place, convertible{}};
             assert(value_constructed);
             assert(value_constructed.value() == 42);
-            static_assert(noexcept(Expected{in_place, convertible{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{in_place, convertible{}}) == should_be_noexcept || is_permissive);
 
             const Expected ilist_value_constructed{in_place, {1}, convertible{}};
             assert(ilist_value_constructed);
             assert(ilist_value_constructed.value() == 1337);
-            static_assert(noexcept(Expected{in_place, {1}, convertible{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{in_place, {1}, convertible{}}) == should_be_noexcept || is_permissive);
         }
 
         { // in place error
@@ -586,12 +588,12 @@ namespace test_expected {
             const Expected value_constructed{unexpect, convertible{}};
             assert(!value_constructed);
             assert(value_constructed.error() == 42);
-            static_assert(noexcept(Expected{unexpect, convertible{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{unexpect, convertible{}}) == should_be_noexcept || is_permissive);
 
             const Expected ilist_value_constructed{unexpect, {1}, convertible{}};
             assert(!ilist_value_constructed);
             assert(ilist_value_constructed.error() == 1337);
-            static_assert(noexcept(Expected{unexpect, {1}, convertible{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{unexpect, {1}, convertible{}}) == should_be_noexcept || is_permissive);
         }
 
         { // expected<void, E>: converting from different expected
@@ -609,7 +611,7 @@ namespace test_expected {
             const Expected move_constructed_value{Input{in_place}};
             assert(move_constructed_value);
             move_constructed_value.value();
-            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept || is_permissive);
 
             const Input const_input_error{unexpect};
             const Expected copy_constructed_error{const_input_error};
@@ -620,7 +622,7 @@ namespace test_expected {
             const Expected move_constructed_error{Input{unexpect}};
             assert(!move_constructed_error);
             assert(move_constructed_error.error() == 42);
-            static_assert(noexcept(Expected{Input{unexpect}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{unexpect}}) == should_be_noexcept || is_permissive);
         }
 
         { // expected<void, E>: converting from unexpected
@@ -631,12 +633,12 @@ namespace test_expected {
             const Expected copy_constructed{const_input};
             assert(!copy_constructed);
             assert(copy_constructed.error() == 3);
-            static_assert(noexcept(Expected{const_input}) == should_be_noexcept);
+            static_assert(noexcept(Expected{const_input}) == should_be_noexcept || is_permissive);
 
             const Expected move_constructed{Input{in_place}};
             assert(!move_constructed);
             assert(move_constructed.error() == 42);
-            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{Input{in_place}}) == should_be_noexcept || is_permissive);
         }
 
         { // expected<void, E>: in place payload
@@ -657,12 +659,12 @@ namespace test_expected {
             const Expected value_constructed{unexpect, convertible{}};
             assert(!value_constructed);
             assert(value_constructed.error() == 42);
-            static_assert(noexcept(Expected{unexpect, convertible{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{unexpect, convertible{}}) == should_be_noexcept || is_permissive);
 
             const Expected ilist_value_constructed{unexpect, {1}, convertible{}};
             assert(!ilist_value_constructed);
             assert(ilist_value_constructed.error() == 1337);
-            static_assert(noexcept(Expected{unexpect, {1}, convertible{}}) == should_be_noexcept);
+            static_assert(noexcept(Expected{unexpect, {1}, convertible{}}) == should_be_noexcept || is_permissive);
         }
     }
 
@@ -2317,6 +2319,77 @@ void test_lwg_3843() {
 static_assert(copyable<expected<any, int>>);
 static_assert(copyable<expected<void, any>>);
 
+// Test workaround for DevCom-10655311: Class derived from std::expected can't be constructed with bool value type
+template <class T, class E>
+class DerivedFromExpected : private expected<T, E> {
+public:
+    using expected<T, E>::expected;
+    using expected<T, E>::value;
+};
+
+static_assert(is_constructible_v<DerivedFromExpected<bool, int>, bool>);
+static_assert(is_constructible_v<DerivedFromExpected<bool, int>, const bool&>);
+
+constexpr bool test_inherited_constructors() {
+    DerivedFromExpected<bool, int> wrapped_false_val(false);
+    assert(!wrapped_false_val.value());
+
+    constexpr bool true_val = true;
+    DerivedFromExpected<bool, int> wrapped_true_val(true_val);
+    assert(wrapped_true_val.value());
+
+    return true;
+}
+
+static_assert(test_inherited_constructors());
+
+// Test GH-4279 "Add deleted function overloads to expected"
+
+template <class T, class E>
+struct ambiguating_expected_copy_constructor_caller {
+    struct const_lvalue_taker {
+        const_lvalue_taker(const expected<T, E>&) {}
+    };
+
+    void operator()(expected<T, E>) {}
+    void operator()(const_lvalue_taker) {}
+};
+
+template <class T, class E>
+struct ambiguating_expected_assignment_source {
+    operator const expected<T, E>&() && {
+        return ex;
+    }
+
+    operator expected<T, E>&&() && {
+        return move(ex);
+    }
+
+    expected<T, E> ex;
+};
+
+struct move_only {
+    move_only()                       = default;
+    move_only(move_only&&)            = default;
+    move_only& operator=(move_only&&) = default;
+};
+
+static_assert(is_invocable_v<ambiguating_expected_copy_constructor_caller<int, char>, const expected<int, char>&>);
+static_assert(is_invocable_v<ambiguating_expected_copy_constructor_caller<void, int>, const expected<void, int>&>);
+static_assert(
+    !is_invocable_v<ambiguating_expected_copy_constructor_caller<move_only, char>, const expected<move_only, char>&>);
+static_assert(
+    !is_invocable_v<ambiguating_expected_copy_constructor_caller<void, move_only>, const expected<void, move_only>&>);
+
+#ifndef __EDG__ // TRANSITION, VSO-1601179
+static_assert(!is_assignable_v<expected<int, char>&, ambiguating_expected_assignment_source<int, char>>);
+static_assert(!is_assignable_v<expected<void, int>&, ambiguating_expected_assignment_source<void, int>>);
+#endif // ^^^ no workaround ^^^
+#ifndef __EDG__ // TRANSITION, VSO-2188364
+static_assert(!is_assignable_v<expected<move_only, char>&, ambiguating_expected_assignment_source<move_only, char>>);
+static_assert(!is_assignable_v<expected<void, move_only>&, ambiguating_expected_assignment_source<void, move_only>>);
+#endif // ^^^ no workaround ^^^
+
 int main() {
     test_unexpected::test_all();
     static_assert(test_unexpected::test_all());
@@ -2333,4 +2406,5 @@ int main() {
 
     test_reinit_regression();
     test_lwg_3843();
+    test_inherited_constructors();
 }
