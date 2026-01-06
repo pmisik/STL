@@ -116,9 +116,13 @@ int main() {
     }
 #endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
 
-    { shared_ptr<int> sp(new int(1729), default_delete<int>(), Mallocator<int>()); }
+    {
+        shared_ptr<int> sp(new int(1729), default_delete<int>(), Mallocator<int>());
+    }
 
-    { shared_ptr<int> sp = allocate_shared<int>(Mallocator<int>(), 1729); }
+    {
+        shared_ptr<int> sp = allocate_shared<int>(Mallocator<int>(), 1729);
+    }
 
 #ifndef _M_CEE_PURE
     {
@@ -153,7 +157,6 @@ int main() {
         f.get();
     }
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
     {
         packaged_task<int()> pt(allocator_arg, Mallocator<int>(), [] { return 1234; });
 
@@ -162,6 +165,17 @@ int main() {
         pt();
 
         assert(f.get() == 1234);
+    }
+
+    // Also test GH-321: "<future>: packaged_task can't be constructed from a move-only lambda"
+    {
+        packaged_task<int()> pt(allocator_arg, Mallocator<int>(), [uptr = make_unique<int>(172)] { return *uptr; });
+
+        future<int> f = pt.get_future();
+
+        pt();
+
+        assert(f.get() == 172);
     }
 
     {
@@ -185,7 +199,6 @@ int main() {
 
         f.get();
     }
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
 #endif // _M_CEE_PURE
 
     assert(g_mallocs == 0);

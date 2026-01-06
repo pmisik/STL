@@ -1,7 +1,7 @@
 // xcharconv_ryu.h internal header
 
 // Copyright (c) Microsoft Corporation.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception AND BSL-1.0
 
 
 // Copyright 2018 Ulf Adams
@@ -74,7 +74,7 @@ _STD_BEGIN
 // https://github.com/ulfjack/ryu/tree/59661c3/ryu
 // (Keep the cgmanifest.json commitHash in sync.)
 
-// clang-format off
+// clang-format off: avoid diverging from external code
 
 // vvvvvvvvvv DERIVED FROM common.h vvvvvvvvvv
 

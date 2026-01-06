@@ -1,7 +1,7 @@
 // xcharconv_ryu_tables.h internal header
 
 // Copyright (c) Microsoft Corporation.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception AND BSL-1.0
 
 
 // Copyright 2018 Ulf Adams
@@ -56,7 +56,7 @@ _STD_BEGIN
 // See xcharconv_ryu.h for the exact commit.
 // (Keep the cgmanifest.json commitHash in sync.)
 
-// clang-format off
+// clang-format off: avoid diverging from external code
 
 // vvvvvvvvvv DERIVED FROM digit_table.h vvvvvvvvvv
 

@@ -180,7 +180,7 @@ constexpr bool test_one(Rng&& rng, Expected&& expected) {
         }
     }
 
-    static_assert(CanMemberEmpty<const R> == ((sized_range<const Rng> || forward_range<const Rng>) &&const_invocable));
+    static_assert(CanMemberEmpty<const R> == ((sized_range<const Rng> || forward_range<const Rng>) && const_invocable));
     static_assert(CanBool<const R> == CanEmpty<const R>);
     if constexpr (CanMemberEmpty<const R>) {
         assert(as_const(r).empty() == is_empty);
@@ -877,6 +877,13 @@ void test_gh_3014() { // COMPILE-ONLY
 
     auto r                                           = FwdRange{} | views::transform(identity{});
     [[maybe_unused]] decltype(as_const(r).begin()) i = r.begin(); // Check 'iterator(iterator<!Const> i)'
+}
+
+void test_lwg_4027() { // COMPILE-ONLY
+    auto r     = views::single(0) | views::transform([](int) { return 0; });
+    using CIt1 = decltype(ranges::cbegin(r));
+    using CIt2 = decltype(cbegin(r));
+    static_assert(same_as<CIt1, CIt2>);
 }
 
 int main() {

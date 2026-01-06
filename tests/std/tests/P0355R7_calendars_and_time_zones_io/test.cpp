@@ -6,6 +6,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <istream>
 #include <iterator>
 #include <limits>
 #include <locale>
@@ -921,9 +922,8 @@ tzdb copy_tzdb() {
     const auto& my_tzdb = get_tzdb_list().front();
     vector<time_zone> zones;
     vector<time_zone_link> links;
-    transform(my_tzdb.zones.begin(), my_tzdb.zones.end(), back_inserter(zones), [](const auto& tz) {
-        return time_zone{_Secret_time_zone_construct_tag{}, tz.name()};
-    });
+    transform(my_tzdb.zones.begin(), my_tzdb.zones.end(), back_inserter(zones),
+        [](const auto& tz) { return time_zone{_Secret_time_zone_construct_tag{}, tz.name()}; });
     transform(my_tzdb.links.begin(), my_tzdb.links.end(), back_inserter(links), [](const auto& link) {
         return time_zone_link{_Secret_time_zone_link_construct_tag{}, link.name(), link.target()};
     });
@@ -1248,8 +1248,52 @@ void test_io_manipulator() {
     fail_parse(WIDEN(CharT, "a  b"), CStringOrStdString{WIDEN(CharT, "a%nb")}, time);
 }
 
+namespace lwg_3956 {
+    struct has_adl_from_stream {
+        int value = 0;
+
+        template <class CharT, class Traits, class... ArgTypes>
+        friend basic_istream<CharT, Traits>& from_stream(
+            basic_istream<CharT, Traits>& istr, const CharT*, has_adl_from_stream& parsed, ArgTypes&&...) {
+            parsed.value = 42;
+            return istr;
+        }
+    };
+
+    struct has_no_adl_from_stream {
+        operator year&() &;
+    };
+
+    template <class... ArgTypes>
+    concept can_parse = requires(ArgTypes&&... args) { parse(forward<ArgTypes>(args)...); };
+
+    static_assert(can_parse<const char*, has_adl_from_stream&>);
+    static_assert(can_parse<const string&, has_adl_from_stream&>);
+    static_assert(can_parse<const wchar_t*, has_adl_from_stream&>);
+    static_assert(can_parse<const wstring&, has_adl_from_stream&>);
+
+    static_assert(!can_parse<const char*, has_no_adl_from_stream&>);
+    static_assert(!can_parse<const string&, has_no_adl_from_stream&>);
+    static_assert(!can_parse<const wchar_t*, has_no_adl_from_stream&>);
+    static_assert(!can_parse<const wstring&, has_no_adl_from_stream&>);
+} // namespace lwg_3956
+
+void test_lwg_3956() {
+    {
+        lwg_3956::has_adl_from_stream parsed{};
+        test_parse("", "", parsed);
+        assert(parsed.value == 42);
+    }
+    {
+        lwg_3956::has_adl_from_stream parsed{};
+        test_parse(L"", L"", parsed);
+        assert(parsed.value == 42);
+    }
+}
+
 void test_parse() {
     test_lwg_3536();
+    test_lwg_3956();
     parse_seconds();
     parse_minutes();
     parse_hours();

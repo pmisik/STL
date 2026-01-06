@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#ifdef __cpp_static_call_operator
-
 #include <functional>
 #include <future>
 #include <type_traits>
@@ -43,15 +41,11 @@ void test_ctad() {
     static_assert(is_same_v<decltype(Temp{Derived{}}), Temp<bool(unsigned int)>>);
     static_assert(is_same_v<decltype(Temp{Nothrow{}}), Temp<char16_t(char32_t)>>);
 
-#if !(defined(__clang__) && defined(_M_IX86)) // TRANSITION, LLVM-62594, fixed in Clang 18
     auto lambda = [](int* p, int** q) static { return *p + **q; };
     static_assert(is_same_v<decltype(Temp{lambda}), Temp<int(int*, int**)>>);
-#endif // ^^^ no workaround ^^^
 }
 
 void all_tests() {
     test_ctad<function>();
     test_ctad<packaged_task>();
 }
-
-#endif // ^^^ defined(__cpp_static_call_operator) ^^^

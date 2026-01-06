@@ -4,12 +4,10 @@
 #include <cstdio>
 #include <cstdlib>
 
-// clang-format off
-#include <initguid.h> // should be before any header that includes <guiddef.h>
+#include <initguid.h>
 #include <DbgEng.h>
 #include <DbgHelp.h>
 #include <Shlwapi.h>
-// clang-format on
 
 // The below function pointer types must be in sync with <stacktrace>
 
@@ -245,7 +243,7 @@ namespace {
 
         locked_data.uninitialize();
     }
-} // namespace
+} // unnamed namespace
 
 extern "C" {
 #pragma optimize("", off) // inhibit tail call optimization to have consistent _Frames_to_skip adjustment here

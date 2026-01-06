@@ -33,11 +33,13 @@ enum class __std_win_error : unsigned long {
     _Sharing_violation         = 32, // #define ERROR_SHARING_VIOLATION          32L
     _Not_supported             = 50, // #define ERROR_NOT_SUPPORTED              50L
     _Error_bad_netpath         = 53, // #define ERROR_BAD_NETPATH                53L
+    _Error_netname_deleted     = 64, // #define ERROR_NETNAME_DELETED            64L
     _File_exists               = 80, // #define ERROR_FILE_EXISTS                80L
     _Invalid_parameter         = 87, // #define ERROR_INVALID_PARAMETER          87L
     _Insufficient_buffer       = 122, // #define ERROR_INSUFFICIENT_BUFFER        122L
     _Invalid_name              = 123, // #define ERROR_INVALID_NAME               123L
     _Directory_not_empty       = 145, // #define ERROR_DIR_NOT_EMPTY              145L
+    _Bad_pathname              = 161, // #define ERROR_BAD_PATHNAME               161L
     _Already_exists            = 183, // #define ERROR_ALREADY_EXISTS             183L
     _Filename_exceeds_range    = 206, // #define ERROR_FILENAME_EXCED_RANGE       206L
     _Directory_name_is_invalid = 267, // #define ERROR_DIRECTORY                  267L
@@ -53,7 +55,9 @@ _NODISCARD inline bool __std_is_file_not_found(const __std_win_error _Error) noe
     case __std_win_error::_Path_not_found:
     case __std_win_error::_Error_bad_netpath:
     case __std_win_error::_Invalid_name:
+    case __std_win_error::_Bad_pathname:
     case __std_win_error::_Directory_name_is_invalid: // Windows 11 24H2
+    case __std_win_error::_Error_netname_deleted: // Windows 11 24H2
         return true;
     default:
         return false;
@@ -230,11 +234,6 @@ struct __std_fs_convert_result {
     __std_win_error _Err;
 };
 
-struct __std_fs_file_id { // typedef struct _FILE_ID_INFO {
-    unsigned long long _Volume_serial_number; //    ULONGLONG VolumeSerialNumber;
-    unsigned char _Id[16]; //    FILE_ID_128 FileId;
-}; // } FILE_ID_INFO, ...;
-
 enum class __std_fs_copy_options {
     _None = 0x0,
 
@@ -301,8 +300,13 @@ _NODISCARD __std_fs_convert_result __stdcall __std_fs_convert_wide_to_narrow_rep
     _In_ __std_code_page _Code_page, _In_reads_(_Input_len) const wchar_t* _Input_str, _In_ int _Input_len,
     _Out_writes_opt_(_Output_len) char* _Output_str, _In_ int _Output_len) noexcept;
 
-_NODISCARD _Success_(return == __std_win_error::_Success) __std_win_error
-    __stdcall __std_fs_get_file_id(_Out_ __std_fs_file_id* _Id, _In_z_ const wchar_t* _Path) noexcept;
+struct __std_fs_equivalent_result {
+    bool _Equivalent;
+    __std_win_error _Error;
+};
+
+_NODISCARD __std_fs_equivalent_result __stdcall __std_fs_equivalent(
+    _In_z_ const wchar_t* _Path1, _In_z_ const wchar_t* _Path2) noexcept;
 
 _NODISCARD __std_win_error __stdcall __std_fs_set_last_write_time(
     _In_ long long _Last_write_filetime, _In_z_ const wchar_t* _Path) noexcept;

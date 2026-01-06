@@ -5,22 +5,28 @@
 
 variables:
 - name: poolName
-  value: 'StlBuild-2024-07-09T1614-Pool'
+  value: 'Stl-2025-12-09T1433-x64-Pool'
+  readonly: true
+- name: arm64PoolName
+  value: 'Stl-2025-12-09T1433-arm64-Pool'
   readonly: true
 - name: poolDemands
   value: 'EnableSpotVM -equals false'
   readonly: true
+- name: vsDevCmdBat
+  value: 'C:\Program Files\Microsoft Visual Studio\18\Insiders\Common7\Tools\VsDevCmd.bat'
+  readonly: true
 - name: tmpDir
-  value: 'D:\Temp'
+  value: 'C:\stlTemp'
   readonly: true
 - name: buildOutputLocation
-  value: 'D:\build'
+  value: 'C:\stlBuild'
   readonly: true
 - name: benchmarkBuildOutputLocation
-  value: 'D:\benchmark'
+  value: 'C:\stlBenchmark'
   readonly: true
 - name: validationBuildOutputLocation
-  value: 'D:\validation'
+  value: 'C:\stlValidation'
   readonly: true
 - name: Codeql.SkipTaskAutoInjection
   value: true

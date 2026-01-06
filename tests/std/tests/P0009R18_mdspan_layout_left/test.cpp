@@ -19,9 +19,10 @@ constexpr void check_members(const extents<IndexType, Extents...>& ext, index_se
     using Ext     = extents<IndexType, Extents...>;
     using Mapping = layout_left::mapping<Ext>;
 
-    // layout_left meets the layout mapping policy requirements and is a trivial type
+    // layout_left meets the requirements of N5001 [mdspan.layout.policy.overview]/1
     static_assert(check_layout_mapping_policy_requirements<layout_left, Ext>());
-    static_assert(is_trivial_v<layout_left>);
+    static_assert(is_trivially_copyable_v<layout_left>);
+    static_assert(is_trivially_default_constructible_v<layout_left>);
 
     // layout_left::mapping<Ext> is a trivially copyable type that models regular for each Ext
     static_assert(is_trivially_copyable_v<Mapping>);
@@ -203,7 +204,7 @@ constexpr void check_construction_from_other_left_mapping() {
 
     { // Check implicit conversions
         static_assert(!NotImplicitlyConstructibleFrom<layout_left::mapping<extents<int, 3>>,
-                      layout_left::mapping<extents<int, 3>>>);
+            layout_left::mapping<extents<int, 3>>>);
         static_assert(NotImplicitlyConstructibleFrom<layout_left::mapping<extents<int, 3>>,
             layout_left::mapping<extents<long long, 3>>>);
         static_assert(NotImplicitlyConstructibleFrom<layout_left::mapping<extents<int, 3, 3>>,
@@ -292,6 +293,8 @@ constexpr void check_construction_from_other_stride_mapping() {
             layout_stride::mapping<extents<long long, 3>>>);
         static_assert(NotImplicitlyConstructibleFrom<layout_left::mapping<extents<int, 3>>,
             layout_stride::mapping<extents<int, dynamic_extent>>>);
+        static_assert(NotImplicitlyConstructibleFrom<layout_left::mapping<extents<int>>,
+            layout_stride::mapping<extents<long long>>>);
     }
 }
 
@@ -484,12 +487,6 @@ constexpr void check_correctness() {
 #endif // ^^^ !defined(__cpp_multidimensional_subscript) ^^^
     }
 }
-
-// When 'M::extents_type::rank_dynamic()' is equal to 0 then 'is_empty_v<M>' should be true (MSVC STL specific behavior)
-static_assert(!is_empty_v<layout_left::mapping<dextents<long long, 2>>>);
-static_assert(!is_empty_v<layout_left::mapping<extents<long long, 3, dynamic_extent>>>);
-static_assert(is_empty_v<layout_left::mapping<extents<long long, 3, 3>>>);
-static_assert(is_empty_v<layout_left::mapping<extents<long long>>>);
 
 constexpr bool test() {
     check_members_with_various_extents([]<class E>(const E& e) { check_members(e, make_index_sequence<E::rank()>{}); });

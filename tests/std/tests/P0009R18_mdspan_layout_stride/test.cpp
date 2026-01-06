@@ -105,9 +105,10 @@ constexpr void do_check_members(const extents<IndexType, Extents...>& ext,
     using Strides = array<IndexType, sizeof...(Extents)>;
     using Mapping = layout_stride::mapping<Ext>;
 
-    // layout_stride meets the layout mapping policy requirements and is a trivial type
+    // layout_stride meets the requirements of N5001 [mdspan.layout.policy.overview]/1
     static_assert(check_layout_mapping_policy_requirements<layout_stride, Ext>());
-    static_assert(is_trivial_v<layout_stride>);
+    static_assert(is_trivially_copyable_v<layout_stride>);
+    static_assert(is_trivially_default_constructible_v<layout_stride>);
 
     // layout_stride::mapping<Ext> is a trivially copyable type that models regular for each Ext
     static_assert(is_trivially_copyable_v<Mapping>);
@@ -198,7 +199,7 @@ constexpr void do_check_members(const extents<IndexType, Extents...>& ext,
 
     { // Check 'is_always_[unique/exhaustive/strided]' functions
         static_assert(Mapping::is_always_unique());
-        static_assert(!Mapping::is_always_exhaustive());
+        static_assert(Mapping::is_always_exhaustive() == (Ext::rank() == 0 || ((Extents == 0) || ...)));
         static_assert(Mapping::is_always_strided());
     }
 
@@ -352,11 +353,11 @@ constexpr void check_construction_from_other_mappings() {
         static_assert(!is_constructible_v<Mapping, layout_right::mapping<extents<long, 3, 3>>>);
         static_assert(!is_constructible_v<Mapping, layout_stride::mapping<extents<int, 4, 4, 3>>>);
         static_assert(!is_constructible_v<Mapping,
-                      LyingLayout<AlwaysUnique::no, AlwaysStrided::yes>::mapping<extents<long, 4, 4>>>);
+            LyingLayout<AlwaysUnique::no, AlwaysStrided::yes>::mapping<extents<long, 4, 4>>>);
         static_assert(!is_constructible_v<Mapping,
-                      LyingLayout<AlwaysUnique::yes, AlwaysStrided::no>::mapping<extents<long, 4, 4>>>);
+            LyingLayout<AlwaysUnique::yes, AlwaysStrided::no>::mapping<extents<long, 4, 4>>>);
         static_assert(!is_constructible_v<Mapping,
-                      LyingLayout<AlwaysUnique::no, AlwaysStrided::no>::mapping<extents<long, 4, 4>>>);
+            LyingLayout<AlwaysUnique::no, AlwaysStrided::no>::mapping<extents<long, 4, 4>>>);
     }
 
     { // Check construction from layout_left::mapping
@@ -385,7 +386,7 @@ constexpr void check_required_span_size() {
         using M1 = layout_stride::mapping<extents<int, 3, 3, 0, 3>>;
         static_assert(M1{}.required_span_size() == 0);
 
-        layout_stride::mapping<dextents<int, 4>> m2{dextents<int, 4>{3, 0, 3, 3}, array{1, 3, 1, 1}};
+        layout_stride::mapping<dextents<int, 4>> m2{dextents<int, 4>{3, 0, 3, 3}, array{1, 3, 1, 3}};
         assert(m2.required_span_size() == 0);
     }
 
@@ -399,22 +400,85 @@ constexpr void check_required_span_size() {
 }
 
 constexpr void check_is_exhaustive() {
-    { // Check exhaustive mappings (all possibilities)
-        using E = extents<int, 2, 3, 5>;
-        assert((layout_stride::mapping<E>{E{}, array{1, 2, 6}}.is_exhaustive()));
-        assert((layout_stride::mapping<E>{E{}, array{1, 10, 2}}.is_exhaustive()));
-        assert((layout_stride::mapping<E>{E{}, array{3, 1, 6}}.is_exhaustive()));
-        assert((layout_stride::mapping<E>{E{}, array{15, 1, 3}}.is_exhaustive()));
-        assert((layout_stride::mapping<E>{E{}, array{5, 10, 1}}.is_exhaustive()));
-        assert((layout_stride::mapping<E>{E{}, array{15, 5, 1}}.is_exhaustive()));
-    }
+    auto check = [](const auto& exts, const auto& strides, bool expected) {
+        layout_stride::mapping m{exts, strides};
+        assert(m.is_exhaustive() == expected);
+    };
 
-    { // Check non-exhaustive mappings
-        using E = extents<int, 2, 5, 8>;
-        assert((!layout_stride::mapping<E>{E{}, array{1, 2, 12}}.is_exhaustive()));
-        assert((!layout_stride::mapping<E>{E{}, array{8, 18, 1}}.is_exhaustive()));
-        assert((!layout_stride::mapping<E>{E{}, array{5, 1, 12}}.is_exhaustive()));
-    }
+    // rank() is equal to 0
+    check(extents<int>{}, array<int, 0>{}, true);
+
+    // rank() is equal to 1
+    check(extents<int, 0>{}, array{1}, true);
+    check(dextents<int, 1>{0}, array{2}, true);
+    check(extents<int, 1>{}, array{3}, false);
+    check(dextents<int, 1>{2}, array{2}, false);
+    check(extents<int, 3>{}, array{1}, true);
+    check(dextents<int, 1>{4}, array{1}, true);
+
+    // rank() is equal to 2
+    check(extents<int, 3, 3>{}, array{1, 3}, true);
+    check(extents<int, dynamic_extent, 3>{3}, array{3, 1}, true);
+    check(extents<int, 3, dynamic_extent>{3}, array{4, 1}, false);
+    check(dextents<int, 2>{3, 3}, array{3, 1}, true);
+    check(extents<int, 4, 5>{}, array{5, 1}, true);
+    check(extents<int, 6, dynamic_extent>{5}, array{1, 6}, true);
+    check(extents<int, dynamic_extent, 7>{5}, array{1, 8}, false);
+    check(dextents<int, 2>{6, 5}, array{1, 10}, false);
+    check(extents<int, 0, 3>{}, array{3, 1}, true);
+    check(extents<int, 0, 3>{}, array{6, 2}, true);
+    check(extents<int, dynamic_extent, 3>{0}, array{6, 1}, true);
+    check(extents<int, 0, dynamic_extent>{3}, array{6, 2}, true);
+    check(dextents<int, 2>{0, 3}, array{7, 2}, true);
+    check(extents<int, 0, 0>{}, array{1, 1}, true);
+    check(extents<int, 0, dynamic_extent>{0, 0}, array{1, 1}, true);
+    check(dextents<int, 2>{0, 0}, array{1, 2}, true);
+    check(extents<int, 1, dynamic_extent>{0}, array{1, 2}, true);
+
+    // rank() is greater than 2
+    check(extents<int, 2, 3, 5>{}, array{1, 2, 6}, true);
+    check(extents<int, dynamic_extent, 3, 5>{2}, array{1, 10, 2}, true);
+    check(extents<int, 2, 3, dynamic_extent>{5}, array{3, 1, 6}, true);
+    check(extents<int, dynamic_extent, dynamic_extent, 5>{2, 3}, array{15, 1, 3}, true);
+    check(extents<int, 2, dynamic_extent, dynamic_extent>{3, 5}, array{5, 10, 1}, true);
+    check(dextents<int, 3>{2, 3, 5}, array{15, 5, 1}, true);
+    check(extents<int, 2, 5, 8>{}, array{1, 2, 12}, false);
+    check(extents<int, 2, dynamic_extent, 8>{5}, array{8, 18, 1}, false);
+    check(dextents<int, 3>{2, 5, 8}, array{5, 1, 12}, false);
+
+    // rank() is greater than 2 and some extents are equal to 0
+    check(extents<int, 2, 0, 7>{}, array{7, 14, 1}, true);
+    check(extents<int, dynamic_extent, 0, 7>{2}, array{1, 14, 2}, true);
+    check(extents<int, 2, dynamic_extent, 7>{0}, array{14, 28, 1}, true);
+    check(extents<int, 2, dynamic_extent, dynamic_extent>{0, 7}, array{1, 2, 2}, true);
+    check(dextents<int, 3>{2, 0, 7}, array{2, 28, 4}, true);
+    check(extents<int, 5, 0, 0>{}, array{3, 1, 1}, true);
+    check(extents<int, 5, dynamic_extent, 0>{0}, array{1, 5, 1}, true);
+    check(dextents<int, 3>{5, 0, 0}, array{2, 1, 10}, true);
+    check(extents<int, 0, 0, 0>{}, array{1, 1, 1}, true);
+    check(extents<int, 0, 1, 1>{}, array{1, 1, 1}, true);
+
+    // rank() is greater than 2 - one extent is equal to 0 while others are equal to each other
+    check(extents<int, 3, 0, 3>{}, array{1, 9, 3}, true);
+    check(extents<int, dynamic_extent, 0, 3>{3}, array{3, 9, 1}, true);
+    check(extents<int, 3, dynamic_extent, dynamic_extent>{0, 3}, array{1, 3, 3}, true);
+    check(dextents<int, 3>{3, 0, 3}, array{1, 4, 8}, true);
+    check(dextents<int, 3>{0, 1, 1}, array{1, 1, 1}, true);
+
+    // required_span_size() is equal to 1
+    check(extents<int, 1>{}, array{1}, true);
+    check(dextents<int, 1>{1}, array{3}, false);
+    check(extents<int, 1, dynamic_extent>{1}, array{1, 1}, true);
+    check(extents<int, 1, 1, 1>{}, array{1, 2, 1}, false);
+
+    // Mapping is exhaustive, but is_exhaustive() should return false because of the way standard defined this function
+    check(extents<int, 3, 1>{}, array{1, 4}, false);
+    check(dextents<int, 3>{5, 1, 2}, array{2, 11, 1}, false);
+    check(dextents<int, 3>{2, 3, 1}, array{3, 1, 8}, false);
+    check(extents<int, 1, dynamic_extent, 7>{6}, array{50, 7, 1}, false);
+    check(dextents<int, 2>{1, 2}, array{5, 1}, false);
+    check(extents<int, 6, 1>{}, array{1, 10}, false);
+    check(dextents<int, 3>{2, 1, 2}, array{3, 3, 1}, false);
 }
 
 constexpr void check_call_operator() {
@@ -539,13 +603,13 @@ constexpr void check_comparisons() {
         static_assert(!equality_comparable_with<DynamicStrideMapping, layout_right::mapping<extents<int, 2>>>);
         static_assert(!equality_comparable_with<StaticStrideMapping, layout_left::mapping<dextents<int, 1>>>);
         static_assert(!equality_comparable_with<DynamicStrideMapping,
-                      LyingLayout<AlwaysUnique::yes, AlwaysStrided::no>::mapping<dextents<int, 2>>>);
+            LyingLayout<AlwaysUnique::yes, AlwaysStrided::no>::mapping<dextents<int, 2>>>);
         static_assert(!equality_comparable_with<StaticStrideMapping,
-                      LyingLayout<AlwaysUnique::yes, AlwaysStrided::no>::mapping<extents<int, 2, 3>>>);
+            LyingLayout<AlwaysUnique::yes, AlwaysStrided::no>::mapping<extents<int, 2, 3>>>);
         static_assert(!equality_comparable_with<DynamicStrideMapping,
-                      LyingLayout<AlwaysUnique::no, AlwaysStrided::no>::mapping<dextents<int, 2>>>);
+            LyingLayout<AlwaysUnique::no, AlwaysStrided::no>::mapping<dextents<int, 2>>>);
         static_assert(!equality_comparable_with<StaticStrideMapping,
-                      LyingLayout<AlwaysUnique::no, AlwaysStrided::no>::mapping<extents<int, 2, 3>>>);
+            LyingLayout<AlwaysUnique::no, AlwaysStrided::no>::mapping<extents<int, 2, 3>>>);
     }
 
     { // Check correctness: layout_stride::mapping with layout_stride::mapping
@@ -736,37 +800,37 @@ constexpr void check_correctness() {
 
     { // 3x2x2 tensor
         using E = extents<int, 3, 2, 2>;
-        const array vals{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23};
-        layout_stride::mapping<E> m{E{}, array{8, 1, 6}}; // non-exhaustive mapping
+        const array vals{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18};
+        layout_stride::mapping<E> m{E{}, array{7, 1, 3}}; // non-exhaustive mapping
         assert(!m.is_exhaustive());
         mdspan<const int, E, layout_stride> tensor{vals.data(), m};
 
 #ifdef __cpp_multidimensional_subscript // TRANSITION, P2128R6
         assert((tensor[0, 0, 0] == 0));
-        assert((tensor[0, 0, 1] == 6));
+        assert((tensor[0, 0, 1] == 3));
         assert((tensor[0, 1, 0] == 1));
-        assert((tensor[0, 1, 1] == 7));
-        assert((tensor[1, 0, 0] == 8));
-        assert((tensor[1, 0, 1] == 14));
-        assert((tensor[1, 1, 0] == 9));
-        assert((tensor[1, 1, 1] == 15));
-        assert((tensor[2, 0, 0] == 16));
-        assert((tensor[2, 0, 1] == 22));
-        assert((tensor[2, 1, 0] == 17));
-        assert((tensor[2, 1, 1] == 23));
+        assert((tensor[0, 1, 1] == 4));
+        assert((tensor[1, 0, 0] == 7));
+        assert((tensor[1, 0, 1] == 10));
+        assert((tensor[1, 1, 0] == 8));
+        assert((tensor[1, 1, 1] == 11));
+        assert((tensor[2, 0, 0] == 14));
+        assert((tensor[2, 0, 1] == 17));
+        assert((tensor[2, 1, 0] == 15));
+        assert((tensor[2, 1, 1] == 18));
 #else // ^^^ defined(__cpp_multidimensional_subscript) / !defined(__cpp_multidimensional_subscript) vvv
         assert((tensor[array{0, 0, 0}] == 0));
-        assert((tensor[array{0, 0, 1}] == 6));
+        assert((tensor[array{0, 0, 1}] == 3));
         assert((tensor[array{0, 1, 0}] == 1));
-        assert((tensor[array{0, 1, 1}] == 7));
-        assert((tensor[array{1, 0, 0}] == 8));
-        assert((tensor[array{1, 0, 1}] == 14));
-        assert((tensor[array{1, 1, 0}] == 9));
-        assert((tensor[array{1, 1, 1}] == 15));
-        assert((tensor[array{2, 0, 0}] == 16));
-        assert((tensor[array{2, 0, 1}] == 22));
-        assert((tensor[array{2, 1, 0}] == 17));
-        assert((tensor[array{2, 1, 1}] == 23));
+        assert((tensor[array{0, 1, 1}] == 4));
+        assert((tensor[array{1, 0, 0}] == 7));
+        assert((tensor[array{1, 0, 1}] == 10));
+        assert((tensor[array{1, 1, 0}] == 8));
+        assert((tensor[array{1, 1, 1}] == 11));
+        assert((tensor[array{2, 0, 0}] == 14));
+        assert((tensor[array{2, 0, 1}] == 17));
+        assert((tensor[array{2, 1, 0}] == 15));
+        assert((tensor[array{2, 1, 1}] == 18));
 #endif // ^^^ !defined(__cpp_multidimensional_subscript) ^^^
     }
 
@@ -819,12 +883,6 @@ constexpr void check_correctness() {
 #endif // ^^^ !defined(__cpp_multidimensional_subscript) ^^^
     }
 }
-
-// When 'M::extents_type::rank()' is equal to 0 then 'is_empty_v<M>' should be true (MSVC STL specific behavior)
-static_assert(!is_empty_v<layout_stride::mapping<dextents<long long, 2>>>);
-static_assert(!is_empty_v<layout_stride::mapping<extents<long long, 3, dynamic_extent>>>);
-static_assert(!is_empty_v<layout_stride::mapping<extents<long long, 3, 3>>>);
-static_assert(is_empty_v<layout_stride::mapping<extents<long long>>>);
 
 constexpr bool test() {
     // Check signed integers

@@ -7,7 +7,7 @@
 #define _ISTREAM_
 #include <yvals_core.h>
 #if _STL_COMPILER_PREPROCESSOR
-#include <ostream>
+#include <__msvc_ostream.hpp>
 
 #pragma pack(push, _CRT_PACKING)
 #pragma warning(push, _STL_WARNING_LEVEL)
@@ -17,6 +17,16 @@ _STL_DISABLE_CLANG_WARNINGS
 #undef new
 
 _STD_BEGIN
+template <class _Elem>
+struct _NODISCARD _Null_terminator_guard {
+    _Elem** _Str_ref;
+    ~_Null_terminator_guard() {
+        if (_Str_ref) {
+            **_Str_ref = _Elem(); // add terminating null character
+        }
+    }
+};
+
 #pragma vtordisp(push, 2) // compiler bug workaround
 
 _EXPORT_STD extern "C++" template <class _Elem, class _Traits>
@@ -145,20 +155,16 @@ public:
         return this->good();
     }
 
-#pragma push_macro("ipfx")
-#pragma push_macro("isfx")
-#undef ipfx
-#undef isfx
+#ifdef _CRTBLD
     // TRANSITION, ABI: non-Standard ipfx() is preserved for binary compatibility
-    _DEPRECATE_IO_PFX_SFX bool __CLR_OR_THIS_CALL ipfx(bool _Noskip = false) {
+    bool __CLR_OR_THIS_CALL ipfx(bool _Noskip = false) {
         // test stream state and skip whitespace as needed
         return _Ipfx(_Noskip);
     }
 
     // TRANSITION, ABI: non-Standard isfx() is preserved for binary compatibility
-    _DEPRECATE_IO_PFX_SFX void __CLR_OR_THIS_CALL isfx() {} // perform any wrapup
-#pragma pop_macro("isfx")
-#pragma pop_macro("ipfx")
+    void __CLR_OR_THIS_CALL isfx() {} // perform any wrapup
+#endif // ^^^ defined(_CRTBLD) ^^^
 
 #ifdef _M_CEE_PURE
     basic_istream& __CLR_OR_THIS_CALL operator>>(basic_istream&(__clrcall* _Pfn)(basic_istream&) ) {
@@ -367,6 +373,10 @@ public:
         // get up to _Count characters into NTCS, stop before _Delim
         ios_base::iostate _State = ios_base::goodbit;
         _Chcount                 = 0;
+
+        // ensure null termination of buffer with nonzero length
+        const _Null_terminator_guard<_Elem> _Guard{0 < _Count ? &_Str : nullptr};
+
         const sentry _Ok(*this, true);
 
         if (_Ok && 0 < _Count) { // state okay, extract characters
@@ -388,7 +398,6 @@ public:
         }
 
         _Myios::setstate(_Chcount == 0 ? _State | ios_base::failbit : _State);
-        *_Str = _Elem(); // add terminating null character
         return *this;
     }
 
@@ -450,6 +459,10 @@ public:
         // get up to _Count characters into NTCS, discard _Delim
         ios_base::iostate _State = ios_base::goodbit;
         _Chcount                 = 0;
+
+        // ensure null termination of buffer with nonzero length
+        const _Null_terminator_guard<_Elem> _Guard{0 < _Count ? &_Str : nullptr};
+
         const sentry _Ok(*this, true);
 
         if (_Ok && 0 < _Count) { // state okay, use facet to extract
@@ -477,7 +490,6 @@ public:
             _CATCH_IO_END
         }
 
-        *_Str = _Elem(); // add terminating null character
         _Myios::setstate(_Chcount == 0 ? _State | ios_base::failbit : _State);
         return *this;
     }
@@ -510,6 +522,11 @@ public:
 
         _Myios::setstate(_State);
         return *this;
+    }
+
+    template <class _CharType = _Elem, enable_if_t<is_same_v<_CharType, char>, int> = 0>
+    basic_istream& ignore(const streamsize _Count, const _Elem _Delim) {
+        return ignore(_Count, _Traits::to_int_type(_Delim));
     }
 
     basic_istream& __CLR_OR_THIS_CALL read(_Elem* _Str, streamsize _Count) { // read up to _Count characters into buffer

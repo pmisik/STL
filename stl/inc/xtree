@@ -21,6 +21,17 @@ _STL_DISABLE_CLANG_WARNINGS
 #undef new
 
 _STD_BEGIN
+#if _HAS_CXX20
+template <class _Ty>
+constexpr bool _Is_transparent_v = _Transparent<_Ty>;
+#else // ^^^ _HAS_CXX20 / !_HAS_CXX20 vvv
+template <class _Ty, class = void>
+constexpr bool _Is_transparent_v = false;
+
+template <class _Ty>
+constexpr bool _Is_transparent_v<_Ty, void_t<typename _Ty::is_transparent>> = true;
+#endif // ^^^ !_HAS_CXX20 ^^^
+
 template <class _Mytree, class _Base = _Iterator_base0>
 class _Tree_unchecked_const_iterator : public _Base {
 public:
@@ -178,7 +189,7 @@ public:
     _NODISCARD reference operator*() const noexcept {
 #if _ITERATOR_DEBUG_LEVEL == 2
         const auto _Mycont = static_cast<const _Mytree*>(this->_Getcont());
-        _STL_ASSERT(_Mycont, "cannot dereference value-initialized map/set iterator");
+        _STL_VERIFY(_Mycont, "cannot dereference value-initialized map/set iterator");
         _STL_VERIFY(this->_Ptr != _Mycont->_Myhead, "cannot dereference end map/set iterator");
 #endif // _ITERATOR_DEBUG_LEVEL == 2
 
@@ -207,7 +218,7 @@ public:
 
     _Tree_const_iterator& operator--() noexcept {
 #if _ITERATOR_DEBUG_LEVEL == 2
-        _STL_ASSERT(this->_Getcont(), "cannot decrement value-initialized map/set iterator");
+        _STL_VERIFY(this->_Getcont(), "cannot decrement value-initialized map/set iterator");
         _Nodeptr _Ptrsav = this->_Ptr;
         _Mybase::operator--();
         _STL_VERIFY(_Ptrsav != this->_Ptr, "cannot decrement begin map/set iterator");
@@ -433,10 +444,10 @@ public:
     using _Unchecked_const_iterator = _Tree_unchecked_const_iterator<_Tree_val>;
     using const_iterator            = _Tree_const_iterator<_Tree_val>;
 
-    template <class _AllocNode>
+    template <class _Alnode>
     struct _NODISCARD _Erase_tree_and_orphan_guard {
         _Tree_val* _Val_ptr;
-        _AllocNode& _Al;
+        _Alnode& _Al;
         _Nodeptr _New_root;
 
         _Erase_tree_and_orphan_guard& operator=(const _Erase_tree_and_orphan_guard&) = delete;
@@ -448,6 +459,16 @@ public:
     };
 
     _Tree_val() noexcept : _Myhead(), _Mysize(0) {}
+
+#if _MSVC_STL_DESTRUCTOR_TOMBSTONES
+    ~_Tree_val() noexcept {
+        if constexpr (is_pointer_v<_Nodeptr>) {
+            const auto _Tombstone{reinterpret_cast<_Nodeptr>(_MSVC_STL_UINTPTR_TOMBSTONE_VALUE)};
+            _Myhead = _Tombstone;
+            _Mysize = 0;
+        }
+    }
+#endif // _MSVC_STL_DESTRUCTOR_TOMBSTONES
 
     enum _Redbl { // colors for link to parent
         _Red,
@@ -903,8 +924,8 @@ public:
     template <class _Any_alloc>
     _Tree(const _Tree& _Right, _Any_alloc&& _Al)
         : _Mypair(_One_then_variadic_args_t{}, _Right.key_comp(), _One_then_variadic_args_t{},
-            _STD forward<_Any_alloc>(_Al)) {
-        auto&& _Alproxy   = _GET_PROXY_ALLOCATOR(_Alnode, _Getal());
+              _STD forward<_Any_alloc>(_Al)) {
+        auto _Alproxy     = _STD _Get_proxy_allocator(_Getal());
         const auto _Scary = _Get_scary();
         _Container_proxy_ptr<_Alty> _Proxy(_Alproxy, *_Scary);
         _Tree_head_scoped_ptr<_Alnode, _Scary_val> _Sentinel(_Getal(), *_Scary);
@@ -915,17 +936,17 @@ public:
 
     _Tree(_Tree&& _Right)
         : _Mypair(_One_then_variadic_args_t{}, _Right.key_comp(), // intentionally copy comparator, see LWG-2227
-            _One_then_variadic_args_t{}, _STD move(_Right._Getal())) {
+              _One_then_variadic_args_t{}, _STD move(_Right._Getal())) {
         _Alloc_sentinel_and_proxy();
         _Swap_val_excluding_comp(_Right);
     }
 
     _Tree(_Tree&& _Right, const allocator_type& _Al)
         : _Mypair(_One_then_variadic_args_t{}, _Right.key_comp(), // intentionally copy comparator, see LWG-2227
-            _One_then_variadic_args_t{}, _Al) {
+              _One_then_variadic_args_t{}, _Al) {
         if constexpr (!_Alnode_traits::is_always_equal::value) {
             if (_Getal() != _Right._Getal()) {
-                auto&& _Alproxy   = _GET_PROXY_ALLOCATOR(_Alnode, _Getal());
+                auto _Alproxy     = _STD _Get_proxy_allocator(_Getal());
                 const auto _Scary = _Get_scary();
                 _Container_proxy_ptr<_Alty> _Proxy(_Alproxy, *_Scary);
                 _Tree_head_scoped_ptr<_Alnode, _Scary_val> _Sentinel(_Getal(), *_Scary);
@@ -940,8 +961,8 @@ public:
         _Swap_val_excluding_comp(_Right);
     }
 
-    _Tree& operator=(_Tree&& _Right) noexcept(
-        _Choose_pocma_v<_Alnode> == _Pocma_values::_Equal_allocators && is_nothrow_move_assignable_v<key_compare>) {
+    _Tree& operator=(_Tree&& _Right)
+        noexcept(_Alnode_traits::is_always_equal::value && is_nothrow_move_assignable_v<key_compare>) {
         if (this == _STD addressof(_Right)) {
             return *this;
         }
@@ -952,9 +973,9 @@ public:
         if constexpr (_Pocma_val == _Pocma_values::_Propagate_allocators) {
             if (_Al != _Right_al) {
                 clear();
-                _Getcomp()            = _Right._Getcomp(); // intentionally copy comparator, see LWG-2227
-                auto&& _Alproxy       = _GET_PROXY_ALLOCATOR(_Alnode, _Al);
-                auto&& _Right_alproxy = _GET_PROXY_ALLOCATOR(_Alnode, _Right_al);
+                _Getcomp()          = _Right._Getcomp(); // intentionally copy comparator, see LWG-2227
+                auto _Alproxy       = _STD _Get_proxy_allocator(_Al);
+                auto _Right_alproxy = _STD _Get_proxy_allocator(_Right_al);
                 _Container_proxy_ptr<_Alty> _Proxy(_Right_alproxy, _Leave_proxy_unbound{});
                 const auto _Scary       = _Get_scary();
                 const auto _Right_scary = _Right._Get_scary();
@@ -998,7 +1019,7 @@ private:
 protected:
     template <class... _Valtys>
     pair<_Nodeptr, bool> _Emplace(_Valtys&&... _Vals) {
-        using _In_place_key_extractor = typename _Traits::template _In_place_key_extractor<_Remove_cvref_t<_Valtys>...>;
+        using _In_place_key_extractor = typename _Traits::template _In_place_key_extractor<_Valtys...>;
         const auto _Scary             = _Get_scary();
         _Tree_find_result<_Nodeptr> _Loc;
         _Nodeptr _Inserted;
@@ -1042,7 +1063,7 @@ public:
 protected:
     template <class... _Valtys>
     _Nodeptr _Emplace_hint(const _Nodeptr _Hint, _Valtys&&... _Vals) {
-        using _In_place_key_extractor = typename _Traits::template _In_place_key_extractor<_Remove_cvref_t<_Valtys>...>;
+        using _In_place_key_extractor = typename _Traits::template _In_place_key_extractor<_Valtys...>;
         const auto _Scary             = _Get_scary();
         _Tree_find_hint_result<_Nodeptr> _Loc;
         _Nodeptr _Inserted;
@@ -1086,7 +1107,7 @@ public:
         const auto _Scary = _Get_scary();
         _Scary->_Erase_head(_Getal());
 #if _ITERATOR_DEBUG_LEVEL != 0 // TRANSITION, ABI
-        auto&& _Alproxy = _GET_PROXY_ALLOCATOR(_Alnode, _Getal());
+        auto _Alproxy = _STD _Get_proxy_allocator(_Getal());
         _Delete_plain_internal(_Alproxy, _Scary->_Myproxy);
 #endif // _ITERATOR_DEBUG_LEVEL != 0
     }
@@ -1104,8 +1125,8 @@ public:
                 clear();
                 const auto _Scary = _Get_scary();
                 _Scary->_Orphan_all();
-                auto&& _Alproxy       = _GET_PROXY_ALLOCATOR(_Alnode, _Al);
-                auto&& _Right_alproxy = _GET_PROXY_ALLOCATOR(_Alnode, _Right_al);
+                auto _Alproxy       = _STD _Get_proxy_allocator(_Al);
+                auto _Right_alproxy = _STD _Get_proxy_allocator(_Right_al);
                 _Container_proxy_ptr<_Alty> _Proxy(_Right_alproxy, _Leave_proxy_unbound{});
                 auto _Right_al_non_const = _Right_al;
                 auto _Newhead            = _Node::_Buyheadnode(_Right_al_non_const);
@@ -1200,8 +1221,8 @@ public:
     }
 
     _NODISCARD size_type max_size() const noexcept {
-        return (_STD min)(
-            static_cast<size_type>(_STD _Max_limit<difference_type>()), _Alnode_traits::max_size(_Getal()));
+        return (_STD min) (static_cast<size_type>(_STD _Max_limit<difference_type>()), //
+            _Alnode_traits::max_size(_Getal()));
     }
 
     _NODISCARD_EMPTY_MEMBER bool empty() const noexcept {
@@ -1350,8 +1371,8 @@ public:
 
 #if _HAS_CXX23
     template <class _Kx>
-        requires _Is_transparent_v<key_compare>
-              && (!is_convertible_v<_Kx, const_iterator>) && (!is_convertible_v<_Kx, iterator>)
+        requires _Transparent<key_compare> && (!is_convertible_v<_Kx, const_iterator>)
+              && (!is_convertible_v<_Kx, iterator>)
     size_type erase(_Kx&& _Keyval) noexcept(noexcept(_Eqrange(_Keyval))) /* strengthened */ {
         return _Erase(_Eqrange(_Keyval));
     }
@@ -1404,7 +1425,7 @@ public:
     }
 
     template <class _Other>
-        requires _Is_transparent_v<key_compare>
+        requires _Transparent<key_compare>
     _NODISCARD bool contains(const _Other& _Keyval) const {
         return _Lower_bound_duplicate(_Find_lower_bound(_Keyval)._Bound, _Keyval);
     }
@@ -1754,8 +1775,8 @@ public:
 
 #if _HAS_CXX23
     template <class _Kx>
-        requires _Is_transparent_v<key_compare>
-              && (!is_convertible_v<_Kx, const_iterator>) && (!is_convertible_v<_Kx, iterator>)
+        requires _Transparent<key_compare> && (!is_convertible_v<_Kx, const_iterator>)
+              && (!is_convertible_v<_Kx, iterator>)
     node_type extract(_Kx&& _Keyval) {
         const const_iterator _Where = find(_Keyval);
         if (_Where == end()) {
@@ -1942,7 +1963,7 @@ protected:
 
     void _Alloc_sentinel_and_proxy() {
         const auto _Scary = _Get_scary();
-        auto&& _Alproxy   = _GET_PROXY_ALLOCATOR(_Alnode, _Getal());
+        auto _Alproxy     = _STD _Get_proxy_allocator(_Getal());
         _Container_proxy_ptr<_Alnode> _Proxy(_Alproxy, *_Scary);
         _Scary->_Myhead = _Node::_Buyheadnode(_Getal());
         _Proxy._Release();

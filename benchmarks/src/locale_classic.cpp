@@ -6,9 +6,10 @@
 using namespace std;
 
 // GH-3048 <locale>: Double-checked locking for locale::classic
-static void BM_locale_classic(benchmark::State& state) {
+void BM_locale_classic(benchmark::State& state) {
     for (auto _ : state) {
-        benchmark::DoNotOptimize(locale::classic());
+        auto v = locale::classic();
+        benchmark::DoNotOptimize(v);
     }
 }
 BENCHMARK(BM_locale_classic);

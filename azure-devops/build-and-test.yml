@@ -6,6 +6,8 @@ parameters:
   type: string
 - name: targetArch
   type: string
+- name: targetPlatform
+  type: string
 - name: analyzeBuild
   type: boolean
   default: false
@@ -15,20 +17,26 @@ parameters:
 - name: buildBenchmarks
   type: boolean
   default: false
-- name: ctestOptions
+- name: testTargets
   type: string
-  default: '--exclude-regex stlasan'
+  default: 'STL-CI'
 - name: numShards
   type: number
   default: 8
-- name: skipTesting
+- name: configureTesting
   type: boolean
-  default: false
+  default: true
+- name: buildStl
+  type: boolean
+  default: true
+- name: runTesting
+  type: boolean
+  default: true
 - name: testsBuildOnly
   type: boolean
   default: false
 jobs:
-- job: '${{ parameters.targetArch }}'
+- job: '${{ parameters.targetPlatform }}'
   strategy:
     parallel: ${{ parameters.numShards }}
   timeoutInMinutes: 30
@@ -36,7 +44,7 @@ jobs:
   - template: checkout-self.yml
   - template: checkout-submodule.yml
     parameters:
-      enabled: ${{ not(parameters.skipTesting) }}
+      enabled: ${{ parameters.configureTesting }}
       path: 'llvm-project'
       url: 'https://github.com/llvm/llvm-project.git'
   - template: checkout-submodule.yml
@@ -53,13 +61,30 @@ jobs:
     parameters:
       hostArch: ${{ parameters.hostArch }}
       targetArch: ${{ parameters.targetArch }}
+      targetPlatform: ${{ parameters.targetPlatform }}
       analyzeBuild: ${{ parameters.analyzeBuild }}
       asanBuild: ${{ parameters.asanBuild }}
-      buildBenchmarks: ${{ parameters.buildBenchmarks }}
+      configureTesting: ${{ parameters.configureTesting }}
+      buildStl: ${{ parameters.buildStl }}
       testsBuildOnly: ${{ parameters.testsBuildOnly }}
+  - template: build-benchmarks.yml
+    parameters:
+      hostArch: ${{ parameters.hostArch }}
+      targetArch: ${{ parameters.targetArch }}
+      targetPlatform: ${{ parameters.targetPlatform }}
+      buildBenchmarks: ${{ parameters.buildBenchmarks }}
+      compiler: cl
+  - template: build-benchmarks.yml
+    parameters:
+      hostArch: ${{ parameters.hostArch }}
+      targetArch: ${{ parameters.targetArch }}
+      targetPlatform: ${{ parameters.targetPlatform }}
+      buildBenchmarks: ${{ parameters.buildBenchmarks }}
+      compiler: clang-cl
   - template: run-tests.yml
     parameters:
       hostArch: ${{ parameters.hostArch }}
       targetArch: ${{ parameters.targetArch }}
-      ctestOptions: ${{ parameters.ctestOptions }}
-      skipTesting: ${{ parameters.skipTesting }}
+      targetPlatform: ${{ parameters.targetPlatform }}
+      testTargets: ${{ parameters.testTargets }}
+      runTesting: ${{ parameters.runTesting }}

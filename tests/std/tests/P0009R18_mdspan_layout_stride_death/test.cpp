@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#define _CONTAINER_DEBUG_LEVEL 1
-
 #include <array>
 #include <cstddef>
 #include <mdspan>
@@ -31,6 +29,12 @@ void test_construction_from_extents_and_array_2() {
     [[maybe_unused]] layout_stride::mapping<Ext> m{Ext{}, array<int, 1>{2}};
 }
 
+void test_construction_from_extents_and_array_3() {
+    using Ext = extents<short, 2, 3, 5>;
+    const array<short, 3> a{29, 2, 6};
+    // Incorrect strides
+    [[maybe_unused]] layout_stride::mapping<Ext> m{Ext{}, a};
+}
 
 void test_construction_from_extents_and_span_1() {
     array<int, 1> a{-1};
@@ -43,6 +47,14 @@ void test_construction_from_extents_and_span_2() {
     array<ConvertibleToInt<int>, 1> a{{{.val = 2}}};
     const span s{a};
     // REQUIRED-SPAN-SIZE(e, s) must be representable as a value of type index_type
+    [[maybe_unused]] layout_stride::mapping<Ext> m{Ext{}, s};
+}
+
+void test_construction_from_extents_and_span_3() {
+    using Ext = extents<unsigned char, 3, 3, 1, 1>;
+    array<long long, 4> a{3, 1, 8, 3};
+    const span s{a};
+    // Incorrect strides
     [[maybe_unused]] layout_stride::mapping<Ext> m{Ext{}, s};
 }
 
@@ -69,15 +81,21 @@ void test_stride_with_empty_extents() {
 
 int main(int argc, char* argv[]) {
     std_testing::death_test_executive exec;
+
+#if _ITERATOR_DEBUG_LEVEL != 0
     exec.add_death_tests({
         test_default_construction,
         test_construction_from_extents_and_array_1,
         test_construction_from_extents_and_array_2,
+        test_construction_from_extents_and_array_3,
         test_construction_from_extents_and_span_1,
         test_construction_from_extents_and_span_2,
+        test_construction_from_extents_and_span_3,
         test_construction_from_strided_layout_mapping,
         test_call_operator,
         test_stride_with_empty_extents,
     });
+#endif // _ITERATOR_DEBUG_LEVEL != 0
+
     return exec.run(argc, argv);
 }

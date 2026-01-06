@@ -37,8 +37,7 @@ public:
         _Node_handle_set_base, _Kty>;
 #endif // _HAS_CXX17
 
-    static constexpr bool _Multi    = _Mfl;
-    static constexpr bool _Standard = true;
+    static constexpr bool _Multi = _Mfl;
 
     template <class... _Args>
     using _In_place_key_extractor = _In_place_key_extract_set<_Kty, _Args...>;
@@ -46,8 +45,6 @@ public:
     _Uset_traits() = default;
 
     explicit _Uset_traits(const _Tr& _Traits) noexcept(is_nothrow_copy_constructible_v<_Tr>) : _Tr(_Traits) {}
-
-    using value_compare = void; // TRANSITION, remove when _Standard becomes unconditionally true
 
     static const _Kty& _Kfn(const value_type& _Val) noexcept {
         return _Val;
@@ -245,9 +242,9 @@ public:
 
     unordered_set(unordered_set&& _Right, const allocator_type& _Al) : _Mybase(_STD move(_Right), _Al) {}
 
-    unordered_set& operator=(unordered_set&& _Right) noexcept(_Alnode_traits::is_always_equal::value
-                                                              && is_nothrow_move_assignable_v<_Hasher>
-                                                              && is_nothrow_move_assignable_v<_Keyeq>) {
+    unordered_set& operator=(unordered_set&& _Right)
+        noexcept(_Alnode_traits::is_always_equal::value
+                 && is_nothrow_move_assignable_v<_Hasher> && is_nothrow_move_assignable_v<_Keyeq>) {
         _Mybase::operator=(_STD move(_Right));
         return *this;
     }
@@ -375,8 +372,8 @@ unordered_set(from_range_t, _Rng&&, _Guide_size_type_t<_Alloc>, _Hasher, _Alloc)
 #endif // _HAS_CXX17
 
 _EXPORT_STD template <class _Kty, class _Hasher, class _Keyeq, class _Alloc>
-void swap(unordered_set<_Kty, _Hasher, _Keyeq, _Alloc>& _Left,
-    unordered_set<_Kty, _Hasher, _Keyeq, _Alloc>& _Right) noexcept(noexcept(_Left.swap(_Right))) {
+void swap(unordered_set<_Kty, _Hasher, _Keyeq, _Alloc>& _Left, unordered_set<_Kty, _Hasher, _Keyeq, _Alloc>& _Right)
+    noexcept(noexcept(_Left.swap(_Right))) {
     _Left.swap(_Right);
 }
 
@@ -587,9 +584,9 @@ public:
     }
 #endif // _HAS_CXX23
 
-    unordered_multiset& operator=(unordered_multiset&& _Right) noexcept(_Alnode_traits::is_always_equal::value
-                                                                        && is_nothrow_move_assignable_v<_Hasher>
-                                                                        && is_nothrow_move_assignable_v<_Keyeq>) {
+    unordered_multiset& operator=(unordered_multiset&& _Right)
+        noexcept(_Alnode_traits::is_always_equal::value
+                 && is_nothrow_move_assignable_v<_Hasher> && is_nothrow_move_assignable_v<_Keyeq>) {
         _Mybase::operator=(_STD move(_Right));
         return *this;
     }
@@ -745,13 +742,6 @@ _NODISCARD bool operator!=(const unordered_multiset<_Kty, _Hasher, _Keyeq, _Allo
     return !(_Left == _Right);
 }
 #endif // !_HAS_CXX20
-
-#if _HAS_TR1_NAMESPACE
-namespace _DEPRECATE_TR1_NAMESPACE tr1 {
-    using _STD unordered_multiset;
-    using _STD unordered_set;
-} // namespace _DEPRECATE_TR1_NAMESPACE tr1
-#endif // _HAS_TR1_NAMESPACE
 
 #if _HAS_CXX17
 namespace pmr {

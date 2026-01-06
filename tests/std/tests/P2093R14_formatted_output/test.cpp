@@ -12,6 +12,7 @@
 #include <io.h>
 #include <limits>
 #include <locale>
+#include <ostream>
 #include <print>
 #include <sstream>
 #include <string>
@@ -23,7 +24,7 @@
 #include <Windows.h>
 #pragma warning(pop)
 
-#include "temp_file_name.hpp"
+#include <temp_file_name.hpp>
 
 using namespace std;
 
@@ -41,13 +42,13 @@ namespace test {
             console_handle =
                 CreateConsoleScreenBuffer(screen_buffer_access, 0, nullptr, CONSOLE_TEXTMODE_BUFFER, nullptr);
 
-            if (console_handle == INVALID_HANDLE_VALUE) [[unlikely]] {
+            if (console_handle == INVALID_HANDLE_VALUE) {
                 return;
             }
 
             const int console_fd = _open_osfhandle(reinterpret_cast<intptr_t>(console_handle), _O_TEXT);
 
-            if (console_fd == -1) [[unlikely]] {
+            if (console_fd == -1) {
                 return;
             }
 
@@ -108,9 +109,9 @@ namespace test {
             // those space characters which appear after the user's text.
             const size_t lastValidChar = output_str.find_last_not_of(' ');
 
-            if (lastValidChar == wstring::npos) [[unlikely]] {
+            if (lastValidChar == wstring::npos) {
                 output_str.clear();
-            } else [[likely]] {
+            } else {
                 output_str = output_str.substr(0, lastValidChar + 1);
             }
 
@@ -119,7 +120,7 @@ namespace test {
 
     private:
         void delete_console() {
-            if (is_console_valid()) [[likely]] {
+            if (is_console_valid()) {
                 // According to the MSDN, we don't call CloseHandle() on handles passed to _open_osfhandle(),
                 // and we don't call _close() on file descriptors passed to _fdopen(). So, our only clean-up
                 // task is to call fclose().

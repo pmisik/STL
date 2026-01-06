@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 // filesystem.cpp -- C++17 <filesystem> implementation
-// (see filesys.cpp for <experimental/filesystem> implementation)
 
 #include <clocale>
 #include <corecrt_terminate.h>
@@ -33,7 +32,6 @@ namespace {
 #define __vcrt_CreateSymbolicLinkW CreateSymbolicLinkW
 #endif // ^^^ !defined(_CRT_APP) ^^^
 
-#ifdef _CRT_APP
     HANDLE __stdcall __vcp_CreateFile(const wchar_t* const _File_name, const unsigned long _Desired_access,
         const unsigned long _Share, SECURITY_ATTRIBUTES* const _Security_attributes,
         const unsigned long _Creation_disposition, const unsigned long _Flags_and_attributes,
@@ -46,9 +44,6 @@ namespace {
         _Create_file_parameters.hTemplateFile        = _Template_file;
         return CreateFile2(_File_name, _Desired_access, _Share, _Creation_disposition, &_Create_file_parameters);
     }
-#else // ^^^ defined(_CRT_APP) / !defined(_CRT_APP) vvv
-#define __vcp_CreateFile CreateFileW
-#endif // ^^^ !defined(_CRT_APP) ^^^
 
     [[nodiscard]] __std_win_error __stdcall _Translate_CreateFile_last_error(const HANDLE _Handle) {
         if (_Handle != INVALID_HANDLE_VALUE) {
@@ -60,7 +55,6 @@ namespace {
 
     [[nodiscard]] __std_fs_copy_file_result __stdcall __vcp_Copyfile(
         const wchar_t* const _Source, const wchar_t* const _Target, const bool _Fail_if_exists) noexcept {
-#if defined(_CRT_APP)
         COPYFILE2_EXTENDED_PARAMETERS _Params{};
         _Params.dwSize      = sizeof(_Params);
         _Params.dwCopyFlags = _Fail_if_exists ? COPY_FILE_FAIL_IF_EXISTS : 0;
@@ -72,13 +66,6 @@ namespace {
 
         // take lower bits to undo HRESULT_FROM_WIN32
         return {false, __std_win_error{_Copy_result & 0x0000FFFFU}};
-#else // ^^^ defined(_CRT_APP) / !defined(_CRT_APP) vvv
-        if (CopyFileW(_Source, _Target, _Fail_if_exists)) {
-            return {true, __std_win_error::_Success};
-        }
-
-        return {false, __std_win_error{GetLastError()}};
-#endif // defined(_CRT_APP)
     }
 
     [[nodiscard]] __std_win_error __stdcall _Create_symlink(
@@ -127,30 +114,7 @@ namespace {
             return __std_win_error::_Success;
         }
 
-        __std_win_error _Last_error{GetLastError()};
-
-#ifndef _CRT_APP
-        switch (_Last_error) {
-        case __std_win_error::_Not_supported:
-        case __std_win_error::_Invalid_parameter:
-            break; // try more things
-        default:
-            return _Last_error; // real error, bail to the caller
-        }
-
-        // try GetFileInformationByHandle as a fallback
-        BY_HANDLE_FILE_INFORMATION _Info;
-        if (GetFileInformationByHandle(_Handle, &_Info)) {
-            _Id->VolumeSerialNumber = _Info.dwVolumeSerialNumber;
-            _CSTD memcpy(&_Id->FileId.Identifier[0], &_Info.nFileIndexHigh, 8); // copying from 2 consecutive DWORDs
-            _CSTD memset(&_Id->FileId.Identifier[8], 0, 8);
-            return __std_win_error::_Success;
-        }
-
-        _Last_error = __std_win_error{GetLastError()};
-#endif // !defined(_CRT_APP)
-
-        return _Last_error;
+        return __std_win_error{GetLastError()};
     }
 
     [[nodiscard]] _Success_(return == __std_win_error::_Success) __std_win_error
@@ -400,7 +364,7 @@ void __stdcall __std_fs_directory_iterator_close(_In_ const __std_fs_dir_handle 
             }
 
             if (!_Do_copy) {
-                // We only need to test `equivalent()` if we _aren't_ going to `CopyFileW()`,
+                // We only need to test `equivalent()` if we _aren't_ going to `CopyFile2()`,
                 // since that call will fail with an `ERROR_SHARING_VIOLATION` anyways.
                 FILE_ID_INFO _Source_id;
                 _Last_error = _Get_file_id_by_handle(_Source_handle._Get(), &_Source_id);
@@ -433,7 +397,13 @@ void __stdcall __std_fs_directory_iterator_close(_In_ const __std_fs_dir_handle 
     return __vcp_Copyfile(_Source, _Target, /* _Fail_if_exists = */ false);
 }
 
-_Success_(return == __std_win_error::_Success) __std_win_error
+struct __std_fs_file_id { // typedef struct _FILE_ID_INFO {
+    unsigned long long _Volume_serial_number; //    ULONGLONG VolumeSerialNumber;
+    unsigned char _Id[16]; //    FILE_ID_128 FileId;
+}; // } FILE_ID_INFO, ...;
+
+// TRANSITION, ABI: preserved for binary compatibility
+[[nodiscard]] _Success_(return == __std_win_error::_Success) __std_win_error
     __stdcall __std_fs_get_file_id(_Out_ __std_fs_file_id* const _Id, _In_z_ const wchar_t* const _Path) noexcept {
     __std_win_error _Last_error;
     const _STD _Fs_file _Handle(
@@ -445,6 +415,37 @@ _Success_(return == __std_win_error::_Success) __std_win_error
     static_assert(sizeof(FILE_ID_INFO) == sizeof(__std_fs_file_id));
     static_assert(alignof(FILE_ID_INFO) == alignof(__std_fs_file_id));
     return _Get_file_id_by_handle(_Handle._Get(), reinterpret_cast<FILE_ID_INFO*>(_Id));
+}
+
+[[nodiscard]] __std_fs_equivalent_result __stdcall __std_fs_equivalent(
+    _In_z_ const wchar_t* const _Left_path, _In_z_ const wchar_t* const _Right_path) noexcept {
+    // See GH-3571: File IDs are only guaranteed to be unique and stable while handles remain open
+    __std_win_error _Last_error;
+    const _STD _Fs_file _Left_handle(
+        _Left_path, __std_access_rights::_File_read_attributes, __std_fs_file_flags::_Backup_semantics, &_Last_error);
+    if (_Last_error != __std_win_error::_Success) {
+        return {false, _Last_error};
+    }
+
+    FILE_ID_INFO _Left_info;
+    _Last_error = _Get_file_id_by_handle(_Left_handle._Get(), &_Left_info);
+    if (_Last_error != __std_win_error::_Success) {
+        return {false, _Last_error};
+    }
+
+    const _STD _Fs_file _Right_handle(
+        _Right_path, __std_access_rights::_File_read_attributes, __std_fs_file_flags::_Backup_semantics, &_Last_error);
+    if (_Last_error != __std_win_error::_Success) {
+        return {false, _Last_error};
+    }
+
+    FILE_ID_INFO _Right_info;
+    _Last_error = _Get_file_id_by_handle(_Right_handle._Get(), &_Right_info);
+    if (_Last_error != __std_win_error::_Success) {
+        return {false, _Last_error};
+    }
+
+    return {_CSTD memcmp(&_Left_info, &_Right_info, sizeof(FILE_ID_INFO)) == 0, __std_win_error::_Success};
 }
 
 [[nodiscard]] __std_win_error __stdcall __std_fs_create_directory_symbolic_link(
@@ -787,18 +788,21 @@ _Success_(return == __std_win_error::_Success) __std_win_error
 namespace {
     _Success_(return > 0 && return < nBufferLength) DWORD WINAPI _Stl_GetTempPath2W(
         _In_ DWORD nBufferLength, _Out_writes_to_opt_(nBufferLength, return +1) LPWSTR lpBuffer) noexcept {
+#if !defined(_ONECORE)
         // See GH-3011: This is intentionally not attempting to cache the function pointer.
         // TRANSITION, ABI: This should use __crtGetTempPath2W after this code is moved into the STL's DLL.
-        using _Fun_ptr = decltype(&::GetTempPath2W);
 
+        // use GetTempPath2W if it is available (only on Windows 11+)...
         const auto _Kernel32 = ::GetModuleHandleW(L"kernel32.dll");
         _Analysis_assume_(_Kernel32);
-        _Fun_ptr _PfGetTempPath2W = reinterpret_cast<_Fun_ptr>(::GetProcAddress(_Kernel32, "GetTempPath2W"));
-        if (!_PfGetTempPath2W) {
-            _PfGetTempPath2W = &::GetTempPathW;
+        const auto _Pf = reinterpret_cast<decltype(&::GetTempPath2W)>(::GetProcAddress(_Kernel32, "GetTempPath2W"));
+        if (_Pf) {
+            return _Pf(nBufferLength, lpBuffer);
         }
+#endif // ^^^ !defined(_ONECORE) ^^^
 
-        return _PfGetTempPath2W(nBufferLength, lpBuffer);
+        // ...otherwise use GetTempPathW.
+        return GetTempPathW(nBufferLength, lpBuffer);
     }
 } // unnamed namespace
 
@@ -898,6 +902,13 @@ namespace {
                     _Merge_to_ull(_Data.ftLastWriteTime.dwHighDateTime, _Data.ftLastWriteTime.dwLowDateTime));
 
                 _Flags &= ~_Get_file_attributes_data;
+            }
+
+            if (!_STD _Bitmask_includes_any(_Attributes, __std_fs_file_attr::_Reparse_point)
+                && _STD _Bitmask_includes_any(_Flags, __std_fs_stats_flags::_Reparse_tag)) {
+                // if reparse tag is requested by caller but the file is not a reparse point, set tag to _None
+                _Stats->_Reparse_point_tag = __std_fs_reparse_tag::_None;
+                _Flags &= ~__std_fs_stats_flags::_Reparse_tag;
             }
         }
     }

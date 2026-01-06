@@ -13,11 +13,13 @@
       // !defined(_LEGACY_CODE_ASSUMES_QUEUE_INCLUDES_ALGORITHM) vvv
 #include <__msvc_heap_algorithms.hpp>
 #endif // ^^^ !defined(_LEGACY_CODE_ASSUMES_QUEUE_INCLUDES_ALGORITHM) ^^^
+
 #include <deque>
 #include <vector>
 
 #if _HAS_CXX23
 #include <__msvc_ranges_to.hpp>
+#include <__msvc_ranges_tuple_formatter.hpp>
 #include <iterator>
 #endif // _HAS_CXX23
 
@@ -66,23 +68,23 @@ public:
     queue(const _Container& _Cont, const _Alloc& _Al) : c(_Cont, _Al) {}
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
-    queue(_Container&& _Cont, const _Alloc& _Al) noexcept(
-        is_nothrow_constructible_v<_Container, _Container, const _Alloc&>) // strengthened
+    queue(_Container&& _Cont, const _Alloc& _Al)
+        noexcept(is_nothrow_constructible_v<_Container, _Container, const _Alloc&>) // strengthened
         : c(_STD move(_Cont), _Al) {}
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
     queue(const queue& _Right, const _Alloc& _Al) : c(_Right.c, _Al) {}
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
-    queue(queue&& _Right, const _Alloc& _Al) noexcept(
-        is_nothrow_constructible_v<_Container, _Container, const _Alloc&>) // strengthened
+    queue(queue&& _Right, const _Alloc& _Al)
+        noexcept(is_nothrow_constructible_v<_Container, _Container, const _Alloc&>) // strengthened
         : c(_STD move(_Right.c), _Al) {}
 
 #if _HAS_CXX23
     template <_Iterator_for_container _InIt, class _Alloc>
         requires uses_allocator_v<_Container, _Alloc>
-    queue(_InIt _First, _InIt _Last, const _Alloc& _Al) noexcept(
-        is_nothrow_constructible_v<_Container, _InIt, _InIt, const _Alloc&>) // strengthened
+    queue(_InIt _First, _InIt _Last, const _Alloc& _Al)
+        noexcept(is_nothrow_constructible_v<_Container, _InIt, _InIt, const _Alloc&>) // strengthened
         : c(_STD move(_First), _STD move(_Last), _Al) {}
 
     template <_Container_compatible_range<_Ty> _Rng, class _Alloc>
@@ -125,8 +127,8 @@ public:
 #if _HAS_CXX23
     template <_Container_compatible_range<_Ty> _Rng>
     void push_range(_Rng&& _Range) {
-        if constexpr (requires { c.append_range(_Range); }) {
-            c.append_range(_Range);
+        if constexpr (requires { c.append_range(_STD forward<_Rng>(_Range)); }) {
+            c.append_range(_STD forward<_Rng>(_Range));
         } else {
             _RANGES copy(_Range, back_insert_iterator{c});
         }
@@ -134,7 +136,7 @@ public:
 #endif // _HAS_CXX23
 
     template <class... _Valty>
-    decltype(auto) emplace(_Valty&&... _Val) {
+    _ADAPTOR_EMPLACE_RETURN emplace(_Valty&&... _Val) {
 #if _HAS_CXX17
         return c.emplace_back(_STD forward<_Valty>(_Val)...);
 #else // ^^^ _HAS_CXX17 / !_HAS_CXX17 vvv
@@ -223,6 +225,17 @@ void swap(queue<_Ty, _Container>& _Left, queue<_Ty, _Container>& _Right) noexcep
 template <class _Ty, class _Container, class _Alloc>
 struct uses_allocator<queue<_Ty, _Container>, _Alloc> : uses_allocator<_Container, _Alloc>::type {};
 
+#if _HAS_CXX23
+// Per LWG-3997, `_CharT` in library-provided `formatter` specializations is
+// constrained to character types supported by `format`.
+template <_Format_supported_charT _CharT, class _Ty, formattable<_CharT> _Container>
+struct formatter<queue<_Ty, _Container>, _CharT>
+    : _Adaptor_formatter_base<queue<_Ty, _Container>, _CharT, _RANGES ref_view> {};
+
+template <class _Ty, class _Container>
+constexpr bool enable_nonlocking_formatter_optimization<queue<_Ty, _Container>> = false;
+#endif // _HAS_CXX23
+
 _EXPORT_STD template <class _Ty, class _Container = vector<_Ty>, class _Pr = less<typename _Container::value_type>>
 class priority_queue {
 public:
@@ -239,9 +252,9 @@ public:
 
     priority_queue() = default;
 
-    explicit priority_queue(const _Pr& _Pred) noexcept(
-        is_nothrow_default_constructible_v<_Container>
-        && is_nothrow_copy_constructible_v<value_compare>) // strengthened
+    explicit priority_queue(const _Pr& _Pred)
+        noexcept(is_nothrow_default_constructible_v<_Container>
+                 && is_nothrow_copy_constructible_v<value_compare>) // strengthened
         : c(), comp(_Pred) {}
 
     priority_queue(const _Pr& _Pred, const _Container& _Cont) : c(_Cont), comp(_Pred) {
@@ -283,15 +296,15 @@ public:
 #endif // _HAS_CXX23
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
-    explicit priority_queue(const _Alloc& _Al) noexcept(
-        is_nothrow_constructible_v<_Container, const _Alloc&>
-        && is_nothrow_default_constructible_v<value_compare>) // strengthened
+    explicit priority_queue(const _Alloc& _Al)
+        noexcept(is_nothrow_constructible_v<_Container, const _Alloc&>
+                 && is_nothrow_default_constructible_v<value_compare>) // strengthened
         : c(_Al), comp() {}
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
-    priority_queue(const _Pr& _Pred, const _Alloc& _Al) noexcept(
-        is_nothrow_constructible_v<_Container, const _Alloc&>
-        && is_nothrow_copy_constructible_v<value_compare>) // strengthened
+    priority_queue(const _Pr& _Pred, const _Alloc& _Al)
+        noexcept(is_nothrow_constructible_v<_Container, const _Alloc&>
+                 && is_nothrow_copy_constructible_v<value_compare>) // strengthened
         : c(_Al), comp(_Pred) {}
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
@@ -308,9 +321,9 @@ public:
     priority_queue(const priority_queue& _Right, const _Alloc& _Al) : c(_Right.c, _Al), comp(_Right.comp) {}
 
     template <class _Alloc, enable_if_t<uses_allocator_v<_Container, _Alloc>, int> = 0>
-    priority_queue(priority_queue&& _Right, const _Alloc& _Al) noexcept(
-        is_nothrow_constructible_v<_Container, _Container, const _Alloc&>
-        && is_nothrow_move_constructible_v<value_compare>) // strengthened
+    priority_queue(priority_queue&& _Right, const _Alloc& _Al)
+        noexcept(is_nothrow_constructible_v<_Container, _Container, const _Alloc&>
+                 && is_nothrow_move_constructible_v<value_compare>) // strengthened
         : c(_STD move(_Right.c), _Al), comp(_STD move(_Right.comp)) {}
 
     template <class _InIt, class _Alloc,
@@ -385,8 +398,8 @@ public:
     void push_range(_Rng&& _Range) {
         const size_type _Old_size = c.size();
 
-        if constexpr (requires { c.append_range(_Range); }) {
-            c.append_range(_Range);
+        if constexpr (requires { c.append_range(_STD forward<_Rng>(_Range)); }) {
+            c.append_range(_STD forward<_Rng>(_Range));
         } else {
             _RANGES copy(_Range, back_insert_iterator{c});
         }
@@ -416,8 +429,8 @@ public:
         c.pop_back();
     }
 
-    void swap(priority_queue& _Right) noexcept(
-        _Is_nothrow_swappable<_Container>::value && _Is_nothrow_swappable<_Pr>::value) {
+    void swap(priority_queue& _Right)
+        noexcept(_Is_nothrow_swappable<_Container>::value && _Is_nothrow_swappable<_Pr>::value) {
         using _STD swap;
         swap(c, _Right.c); // intentional ADL
         swap(comp, _Right.comp); // intentional ADL
@@ -482,14 +495,24 @@ priority_queue(from_range_t, _Rng&&, _Alloc)
 
 _EXPORT_STD template <class _Ty, class _Container, class _Pr,
     enable_if_t<_Is_swappable<_Container>::value && _Is_swappable<_Pr>::value, int> = 0>
-void swap(priority_queue<_Ty, _Container, _Pr>& _Left, priority_queue<_Ty, _Container, _Pr>& _Right) noexcept(
-    noexcept(_Left.swap(_Right))) {
+void swap(priority_queue<_Ty, _Container, _Pr>& _Left, priority_queue<_Ty, _Container, _Pr>& _Right)
+    noexcept(noexcept(_Left.swap(_Right))) {
     _Left.swap(_Right);
 }
 
 template <class _Ty, class _Container, class _Pr, class _Alloc>
 struct uses_allocator<priority_queue<_Ty, _Container, _Pr>, _Alloc> : uses_allocator<_Container, _Alloc>::type {};
 
+#if _HAS_CXX23
+// Per LWG-3997, `_CharT` in library-provided `formatter` specializations is
+// constrained to character types supported by `format`.
+template <_Format_supported_charT _CharT, class _Ty, formattable<_CharT> _Container, class _Comp>
+struct formatter<priority_queue<_Ty, _Container, _Comp>, _CharT>
+    : _Adaptor_formatter_base<priority_queue<_Ty, _Container, _Comp>, _CharT, _RANGES ref_view> {};
+
+template <class _Ty, class _Container, class _Compare>
+constexpr bool enable_nonlocking_formatter_optimization<priority_queue<_Ty, _Container, _Compare>> = false;
+#endif // _HAS_CXX23
 _STD_END
 
 #pragma pop_macro("new")

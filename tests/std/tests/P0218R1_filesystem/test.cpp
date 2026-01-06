@@ -53,33 +53,6 @@ template <typename Elem, typename Traits>
     return str.size() >= prefix.size() && Traits::compare(str.data(), prefix.data(), prefix.size()) == 0;
 }
 
-struct [[nodiscard]] test_temp_directory {
-    path directoryPath;
-    explicit test_temp_directory(const string_view testName) : directoryPath(get_test_directory(testName)) {
-        error_code ec;
-        remove_all(directoryPath, ec);
-        if (ec) {
-            wcerr << L"Warning, couldn't clean up " << directoryPath << L" before test.\n";
-        } else {
-            create_directories(directoryPath, ec);
-            if (ec) {
-                wcerr << L"Warning, couldn't create test directory " << directoryPath << L" before test.\n";
-            }
-        }
-    }
-
-    test_temp_directory(const test_temp_directory&)            = delete;
-    test_temp_directory& operator=(const test_temp_directory&) = delete;
-
-    ~test_temp_directory() noexcept {
-        error_code ec;
-        remove_all(directoryPath, ec);
-        if (ec) {
-            wcerr << L"Warning, couldn't clean up " << directoryPath << L" after test.\n";
-        }
-    }
-};
-
 bool pass = true;
 
 bool expect(const bool b, const char* const func, const int line, const char* const message) {
@@ -1267,7 +1240,9 @@ void test_directory_iterator_common_parts(const string_view typeName) {
 
     // DirectoryIterator() noexcept;
     // ~DirectoryIterator();
-    { DirectoryIterator default_ctor; }
+    {
+        DirectoryIterator default_ctor;
+    }
 
     // explicit DirectoryIterator(const path& _Path_arg);
     // DirectoryIterator(const path& _Path_arg, directory_options _Options_arg);
@@ -1284,10 +1259,7 @@ void test_directory_iterator_common_parts(const string_view typeName) {
 
             EXPECT(throws_filesystem_error([&] { DirectoryIterator bad_dir{nonexistent}; }, typeName, nonexistent));
             EXPECT(throws_filesystem_error(
-                [&] {
-                    DirectoryIterator bad_dir{nonexistent, directory_options::none};
-                },
-                typeName, nonexistent));
+                [&] { DirectoryIterator bad_dir{nonexistent, directory_options::none}; }, typeName, nonexistent));
         }
 
         // Test VSO-844835 "directory_iterator constructed with empty path iterates over the current directory"
@@ -2495,14 +2467,14 @@ void test_conversions() {
     static_assert(is_constructible_v<path, basic_string_view<char16_t, MyTraits<char16_t>>>);
     static_assert(is_constructible_v<path, basic_string_view<char32_t, MyTraits<char32_t>>>);
 
-    static_assert(is_constructible_v<path, char(&)[5]>);
+    static_assert(is_constructible_v<path, char (&)[5]>);
     static_assert(is_constructible_v<path, wchar_t(&)[5]>);
-    static_assert(is_constructible_v<path, char16_t(&)[5]>);
-    static_assert(is_constructible_v<path, char32_t(&)[5]>);
-    static_assert(is_constructible_v<path, const char(&)[5]>);
+    static_assert(is_constructible_v<path, char16_t (&)[5]>);
+    static_assert(is_constructible_v<path, char32_t (&)[5]>);
+    static_assert(is_constructible_v<path, const char (&)[5]>);
     static_assert(is_constructible_v<path, const wchar_t(&)[5]>);
-    static_assert(is_constructible_v<path, const char16_t(&)[5]>);
-    static_assert(is_constructible_v<path, const char32_t(&)[5]>);
+    static_assert(is_constructible_v<path, const char16_t (&)[5]>);
+    static_assert(is_constructible_v<path, const char32_t (&)[5]>);
 
     static_assert(is_constructible_v<path, char*>);
     static_assert(is_constructible_v<path, wchar_t*>);
@@ -2533,11 +2505,11 @@ void test_conversions() {
 
     static_assert(!is_constructible_v<path, basic_string<signed char>>);
     static_assert(!is_constructible_v<path, basic_string_view<signed char>>);
-    static_assert(!is_constructible_v<path, const signed char(&)[5]>);
+    static_assert(!is_constructible_v<path, const signed char (&)[5]>);
     static_assert(!is_constructible_v<path, const signed char*>);
     static_assert(!is_constructible_v<path, basic_string<unsigned char>>);
     static_assert(!is_constructible_v<path, basic_string_view<unsigned char>>);
-    static_assert(!is_constructible_v<path, const unsigned char(&)[5]>);
+    static_assert(!is_constructible_v<path, const unsigned char (&)[5]>);
     static_assert(!is_constructible_v<path, const unsigned char*>);
     static_assert(!is_constructible_v<path, char>);
     static_assert(!is_constructible_v<path, double>);
@@ -3030,9 +3002,8 @@ void test_locale_conversions() {
         const path p4(utf8_koshka_cat.begin(), utf8_koshka_cat.end(), utf8_locale);
         EXPECT(p4.native() == utf16_koshka_cat);
 
-        EXPECT(throws_system_error([&] {
-            (void) path{utf8_koshka_cat.begin() + 1, utf8_koshka_cat.end(), utf8_locale};
-        }));
+        EXPECT(
+            throws_system_error([&] { (void) path{utf8_koshka_cat.begin() + 1, utf8_koshka_cat.end(), utf8_locale}; }));
     }
 }
 
@@ -3578,7 +3549,8 @@ void test_temp_directory_path() {
     }
 
     const auto nonexistentTemp = temp_directory_path(ec).native();
-    EXPECT(nonexistentTemp.find(LR"(\nonexistent.dir\)") == nonexistentTemp.size() - 17);
+    // returns path() if an error occurs. (N5008 [fs.op.temp.dir.path]/3)
+    EXPECT(nonexistentTemp.empty());
     EXPECT(ec == make_error_code(errc::not_a_directory));
 
     // TODO: automated test is_directory(p) is false, symlinks, after other filesystem components are implemented
@@ -4086,11 +4058,15 @@ int wmain(int argc, wchar_t* argv[]) {
     try {
         return run_all_tests(argc, argv);
     } catch (const filesystem_error& fe) {
-        cout << "filesystem_error: " << fe.what() << endl;
+        cout << "Caught filesystem_error." << endl;
+        cout << "    what: " << fe.what() << endl;
+        cout << "   value: " << fe.code().value() << endl;
+        cout << "category: " << fe.code().category().name() << endl;
     } catch (const exception& e) {
-        cout << "exception: " << e.what() << endl;
+        cout << "Caught exception." << endl;
+        cout << "what: " << e.what() << endl;
     } catch (...) {
-        cout << "Unknown exception." << endl;
+        cout << "Caught unknown exception." << endl;
     }
 
     return EXIT_FAILURE;

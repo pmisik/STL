@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <xcall_once.h>
 #include <xerrc.h>
+
 #ifndef _M_CEE_PURE
 #include <atomic>
 #endif // !defined(_M_CEE_PURE)
@@ -31,8 +32,10 @@ _STL_DISABLE_CLANG_WARNINGS
 // TRANSITION, non-_Ugly attribute tokens
 #pragma push_macro("msvc")
 #pragma push_macro("noop_dtor")
+#pragma push_macro("no_specializations")
 #undef msvc
 #undef noop_dtor
+#undef no_specializations
 
 _STD_BEGIN
 _EXPORT_STD enum class io_errc { // error codes for ios_base::failure
@@ -46,7 +49,7 @@ template <>
 struct is_error_code_enum<io_errc> : true_type {};
 
 _EXPORT_STD template <class _Ty>
-constexpr bool is_error_code_enum_v = is_error_code_enum<_Ty>::value;
+_NO_SPECIALIZATIONS_OF_VARIABLE_TEMPLATES constexpr bool is_error_code_enum_v = is_error_code_enum<_Ty>::value;
 
 _EXPORT_STD template <class _Enum>
 struct is_error_condition_enum : false_type {};
@@ -55,7 +58,8 @@ template <>
 struct is_error_condition_enum<errc> : true_type {};
 
 _EXPORT_STD template <class _Ty>
-constexpr bool is_error_condition_enum_v = is_error_condition_enum<_Ty>::value;
+_NO_SPECIALIZATIONS_OF_VARIABLE_TEMPLATES constexpr bool is_error_condition_enum_v =
+    is_error_condition_enum<_Ty>::value;
 
 _EXPORT_STD class error_code;
 _EXPORT_STD class error_condition;
@@ -458,7 +462,7 @@ struct hash<error_condition> {
     }
 };
 
-class _System_error : public runtime_error { // base of all system-error exceptions
+class _NODISCARD _System_error : public runtime_error { // base of all system-error exceptions
 private:
     static string _Makestr(error_code _Errcode, string _Message) { // compose error message
         if (!_Message.empty()) {
@@ -470,15 +474,21 @@ private:
     }
 
 protected:
+#if _HAS_EXCEPTIONS
     _System_error(error_code _Errcode) : runtime_error(_Errcode.message()), _Mycode(_Errcode) {}
 
     _System_error(error_code _Errcode, const string& _Message)
         : runtime_error(_Makestr(_Errcode, _Message)), _Mycode(_Errcode) {}
+#else // ^^^ _HAS_EXCEPTIONS / !_HAS_EXCEPTIONS vvv
+    _System_error(error_code _Errcode) : runtime_error("system error"), _Mycode(_Errcode) {}
+
+    _System_error(error_code _Errcode, const string&) : runtime_error("system error"), _Mycode(_Errcode) {}
+#endif // ^^^ !_HAS_EXCEPTIONS ^^^
 
     error_code _Mycode; // the stored error code
 };
 
-_EXPORT_STD class system_error : public _System_error { // base of all system-error exceptions
+_EXPORT_STD class _NODISCARD system_error : public _System_error { // base of all system-error exceptions
 private:
     using _Mybase = _System_error;
 
@@ -573,13 +583,14 @@ public:
 
     _NODISCARD string message(int _Errcode) const override {
         const _System_error_message _Msg(static_cast<unsigned long>(_Errcode));
-        if (_Msg._Length == 0) {
+
+        if (_Msg._Str && _Msg._Length != 0) {
+            // CodeQL [SM02310] _Msg's ctor inits _Str(nullptr) before doing work, then we test _Msg._Str above.
+            return string{_Msg._Str, _Msg._Length};
+        } else {
             static constexpr char _Unknown_error[] = "unknown error";
             constexpr size_t _Unknown_error_length = sizeof(_Unknown_error) - 1; // TRANSITION, DevCom-906503
             return string{_Unknown_error, _Unknown_error_length};
-        } else {
-            _STL_INTERNAL_CHECK(_Msg._Str != nullptr);
-            return string{_Msg._Str, _Msg._Length}; // lgtm [cpp/uninitializedptrfield]
         }
     }
 
@@ -726,6 +737,7 @@ _STD_END
 #endif // _HAS_CXX17
 
 // TRANSITION, non-_Ugly attribute tokens
+#pragma pop_macro("no_specializations")
 #pragma pop_macro("noop_dtor")
 #pragma pop_macro("msvc")
 

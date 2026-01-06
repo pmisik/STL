@@ -16,6 +16,12 @@ _STL_DISABLE_CLANG_WARNINGS
 #pragma push_macro("new")
 #undef new
 
+// TRANSITION, non-_Ugly attribute tokens
+#pragma push_macro("msvc")
+#pragma push_macro("no_specializations")
+#undef msvc
+#undef no_specializations
+
 _STD_BEGIN
 template <class _Ty, class _Alloc, class = void>
 struct _Has_allocator_type : false_type {}; // tests for suitable _Ty::allocator_type
@@ -34,7 +40,7 @@ _EXPORT_STD template <class _Ty, class _Alloc>
 struct uses_allocator : _Has_allocator_type<_Ty, _Alloc>::type {};
 
 _EXPORT_STD template <class _Ty, class _Alloc>
-constexpr bool uses_allocator_v = uses_allocator<_Ty, _Alloc>::value;
+_NO_SPECIALIZATIONS_OF_VARIABLE_TEMPLATES constexpr bool uses_allocator_v = uses_allocator<_Ty, _Alloc>::value;
 
 // from <iterator>
 _EXPORT_STD struct input_iterator_tag {};
@@ -206,38 +212,32 @@ struct _Iter_traits_difference<false> {
     using _Apply = void;
 };
 
-// clang-format off
 template <class _It>
-concept _Cpp17_iterator =
-    requires(_It __i) {
-        { *__i } -> _Can_reference;
-        { ++__i } -> same_as<_It&>;
-        { *__i++ } -> _Can_reference;
-    }
-    && copyable<_It>;
+concept _Cpp17_iterator = requires(_It __i) {
+    { *__i } -> _Can_reference;
+    { ++__i } -> same_as<_It&>;
+    { *__i++ } -> _Can_reference;
+} && copyable<_It>;
 
 template <class _It>
-concept _Cpp17_input_iterator = _Cpp17_iterator<_It>
-    && equality_comparable<_It>
-    && _Has_member_difference_type<incrementable_traits<_It>>
-    && _Has_member_value_type<indirectly_readable_traits<_It>>
-    && requires(_It __i) {
-        typename common_reference_t<iter_reference_t<_It>&&, typename indirectly_readable_traits<_It>::value_type&>;
-        typename common_reference_t<decltype(*__i++)&&, typename indirectly_readable_traits<_It>::value_type&>;
-        requires signed_integral<typename incrementable_traits<_It>::difference_type>;
-    };
+concept _Cpp17_input_iterator =
+    _Cpp17_iterator<_It> && equality_comparable<_It> && _Has_member_difference_type<incrementable_traits<_It>>
+    && _Has_member_value_type<indirectly_readable_traits<_It>> && requires(_It __i) {
+           typename common_reference_t<iter_reference_t<_It>&&, typename indirectly_readable_traits<_It>::value_type&>;
+           typename common_reference_t<decltype(*__i++)&&, typename indirectly_readable_traits<_It>::value_type&>;
+           requires signed_integral<typename incrementable_traits<_It>::difference_type>;
+       };
 
 template <class _It>
     requires (!_Has_iter_types<_It> && _Cpp17_iterator<_It> && !_Cpp17_input_iterator<_It>)
 struct _Iterator_traits_base<_It> {
     using iterator_category = output_iterator_tag;
-    using value_type = void;
+    using value_type        = void;
     using difference_type =
         _Iter_traits_difference<_Has_member_difference_type<incrementable_traits<_It>>>::template _Apply<_It>;
-    using pointer    = void;
-    using reference  = void;
+    using pointer   = void;
+    using reference = void;
 };
-// clang-format on
 
 enum class _Itraits_pointer_strategy { _Use_void, _Use_member, _Use_decltype };
 
@@ -263,7 +263,7 @@ struct _Iter_traits_pointer<_Itraits_pointer_strategy::_Use_decltype> {
 };
 
 template <class _Ty>
-concept _Has_member_arrow = requires(_Ty&& __t) { static_cast<_Ty&&>(__t).operator->(); };
+concept _Has_member_arrow = requires(_Ty&& __t) { static_cast<_Ty &&>(__t).operator->(); };
 
 template <bool _Has_member_typedef>
 struct _Iter_traits_reference {
@@ -287,19 +287,21 @@ struct _Iter_traits_category4<false> {
     using type = bidirectional_iterator_tag;
 };
 
-// clang-format off
 template <class _It>
-concept _Cpp17_random_delta = totally_ordered<_It>
-    && requires(_It __i, incrementable_traits<_It>::difference_type __n) {
+concept _Cpp17_random_delta =
+#if defined(__CUDACC__) && !defined(__clang__) // TRANSITION, fixed in CUDA 12.5
+    totally_ordered<_It> && requires(_It __i, typename incrementable_traits<_It>::difference_type __n) {
+#else // ^^^ workaround / no workaround vvv
+    totally_ordered<_It> && requires(_It __i, incrementable_traits<_It>::difference_type __n) {
+#endif // ^^^ no workaround ^^^
         { __i += __n } -> same_as<_It&>;
         { __i -= __n } -> same_as<_It&>;
-        { __i +  __n } -> same_as<_It>;
-        { __n +  __i } -> same_as<_It>;
-        { __i -  __n } -> same_as<_It>;
-        { __i -  __i } -> same_as<decltype(__n)>;
-        {  __i[__n]  } -> convertible_to<iter_reference_t<_It>>;
+        { __i + __n } -> same_as<_It>;
+        { __n + __i } -> same_as<_It>;
+        { __i - __n } -> same_as<_It>;
+        { __i - __i } -> same_as<decltype(__n)>;
+        { __i[__n] } -> convertible_to<iter_reference_t<_It>>;
     };
-// clang-format on
 
 template <bool _Is_bidi>
 struct _Iter_traits_category3 {
@@ -332,15 +334,14 @@ struct _Iter_traits_category2<false> {
     using _Apply = input_iterator_tag;
 };
 
-// clang-format off
 template <class _It>
-concept _Cpp17_forward_delta = constructible_from<_It> && is_reference_v<iter_reference_t<_It>>
+concept _Cpp17_forward_delta =
+    constructible_from<_It> && is_reference_v<iter_reference_t<_It>>
     && same_as<remove_cvref_t<iter_reference_t<_It>>, typename indirectly_readable_traits<_It>::value_type>
     && requires(_It __i) {
-        { __i++ } -> convertible_to<const _It&>;
-        requires same_as<decltype(*__i++), iter_reference_t<_It>>;
-    };
-// clang-format on
+           { __i++ } -> convertible_to<const _It&>;
+           requires same_as<decltype(*__i++), iter_reference_t<_It>>;
+       };
 
 template <bool _Has_member_typedef>
 struct _Iter_traits_category {
@@ -354,20 +355,18 @@ struct _Iter_traits_category<false> {
     using _Apply = _Iter_traits_category2<_Cpp17_forward_delta<_It>>::template _Apply<_It>;
 };
 
-// clang-format off
 template <class _It>
     requires (!_Has_iter_types<_It> && _Cpp17_input_iterator<_It>)
 struct _Iterator_traits_base<_It> {
     using iterator_category = _Iter_traits_category<_Has_member_iterator_category<_It>>::template _Apply<_It>;
     using value_type        = indirectly_readable_traits<_It>::value_type;
     using difference_type   = incrementable_traits<_It>::difference_type;
-    using pointer           = _Iter_traits_pointer<(
-        _Has_member_pointer<_It> ? _Itraits_pointer_strategy::_Use_member
-                                 : _Has_member_arrow<_It&> ? _Itraits_pointer_strategy::_Use_decltype
-                                                       : _Itraits_pointer_strategy::_Use_void)>::template _Apply<_It>;
-    using reference         = _Iter_traits_reference<_Has_member_reference<_It>>::template _Apply<_It>;
+    using pointer =
+        _Iter_traits_pointer<(_Has_member_pointer<_It>  ? _Itraits_pointer_strategy::_Use_member
+                              : _Has_member_arrow<_It&> ? _Itraits_pointer_strategy::_Use_decltype
+                                                        : _Itraits_pointer_strategy::_Use_void)>::template _Apply<_It>;
+    using reference = _Iter_traits_reference<_Has_member_reference<_It>>::template _Apply<_It>;
 };
-// clang-format on
 
 _EXPORT_STD template <class _Ty>
 struct iterator_traits : _Iterator_traits_base<_Ty> {
@@ -392,43 +391,36 @@ constexpr bool _Integer_class = requires {
 };
 
 template <class _Ty>
-concept _Integer_like = _Is_nonbool_integral<remove_cv_t<_Ty>> || _Integer_class<_Ty>;
+concept _Integer_like = _Is_nonbool_integral<_Ty> || _Integer_class<_Ty>;
 
 template <class _Ty>
 concept _Signed_integer_like = _Integer_like<_Ty> && static_cast<_Ty>(-1) < static_cast<_Ty>(0);
 
-// clang-format off
 _EXPORT_STD template <class _Ty>
-concept weakly_incrementable = movable<_Ty>
-    && requires(_Ty __i) {
-        typename iter_difference_t<_Ty>;
-        requires _Signed_integer_like<iter_difference_t<_Ty>>;
-        { ++__i } -> same_as<_Ty&>;
-        __i++;
-    };
+concept weakly_incrementable = movable<_Ty> && requires(_Ty __i) {
+    typename iter_difference_t<_Ty>;
+    requires _Signed_integer_like<iter_difference_t<_Ty>>;
+    { ++__i } -> same_as<_Ty&>;
+    __i++;
+};
 
 _EXPORT_STD template <class _It>
-concept input_or_output_iterator = requires(_It __i) { { *__i } -> _Can_reference; }
-    && weakly_incrementable<_It>;
+concept input_or_output_iterator = requires(_It __i) {
+    { *__i } -> _Can_reference;
+} && weakly_incrementable<_It>;
 
 _EXPORT_STD template <class _Se, class _It>
-concept sentinel_for = semiregular<_Se>
-    && input_or_output_iterator<_It>
-    && _Weakly_equality_comparable_with<_Se, _It>;
-// clang-format on
+concept sentinel_for = semiregular<_Se> && input_or_output_iterator<_It> && _Weakly_equality_comparable_with<_Se, _It>;
 
-_EXPORT_STD template <class _Se, class _It>
+_EXPORT_STD template <class _Se, class _It> // specializations allowed by N5014 [iterator.concept.sizedsentinel]/3
 constexpr bool disable_sized_sentinel_for = false;
 
-// clang-format off
 _EXPORT_STD template <class _Se, class _It>
-concept sized_sentinel_for = sentinel_for<_Se, _It>
-    && !disable_sized_sentinel_for<remove_cv_t<_Se>, remove_cv_t<_It>>
-    && requires(const _It& __i, const _Se& __s) {
-        { __s - __i } -> same_as<iter_difference_t<_It>>;
-        { __i - __s } -> same_as<iter_difference_t<_It>>;
-    };
-// clang-format on
+concept sized_sentinel_for = sentinel_for<_Se, _It> && !disable_sized_sentinel_for<remove_cv_t<_Se>, remove_cv_t<_It>>
+                          && requires(const _It& __i, const _Se& __s) {
+                                 { __s - __i } -> same_as<iter_difference_t<_It>>;
+                                 { __i - __s } -> same_as<iter_difference_t<_It>>;
+                             };
 
 _EXPORT_STD struct default_sentinel_t {};
 
@@ -511,6 +503,9 @@ struct iterator_traits : _Iterator_traits_base<_Iter> {}; // get traits from ite
 
 template <class _Ty>
 struct iterator_traits<_Ty*> : _Iterator_traits_pointer_base<_Ty> {}; // get traits from pointer, if possible
+
+template <class _Ty>
+constexpr bool _Integer_like = _Is_nonbool_integral<_Ty>;
 #endif // ^^^ !_HAS_CXX20 ^^^
 
 _INLINE_VAR constexpr auto _Meta_npos = ~size_t{0};
@@ -552,6 +547,10 @@ struct _Meta_find_unique_index_<_List<_First, _Rest...>, _Ty> {
     using type = integral_constant<size_t, _STD _Meta_find_unique_index_i_(_Bools, 1 + sizeof...(_Rest))>;
 };
 _STD_END
+
+// TRANSITION, non-_Ugly attribute tokens
+#pragma pop_macro("no_specializations")
+#pragma pop_macro("msvc")
 
 #pragma pop_macro("new")
 _STL_RESTORE_CLANG_WARNINGS

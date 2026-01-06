@@ -96,16 +96,19 @@ constexpr void sloc_constructor_test() {
     assert(x.loc.column() == 13);
 #endif // ^^^ !defined(__EDG__) ^^^
 #if _USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
-#if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1285783
-    if (is_constant_evaluated()) {
-        assert(x.loc.function_name() == "int __cdecl main(void)"sv);
-    } else
+#if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1285783 (fixed in MSVC Compiler 19.51)
+    if (!is_constant_evaluated())
 #endif // ^^^ workaround ^^^
     {
         assert(x.loc.function_name() == "void __cdecl sloc_constructor_test(void)"sv);
     }
 #else // ^^^ detailed / basic vvv
-    assert(x.loc.function_name() == "sloc_constructor_test"sv);
+#if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1285783 (fixed in MSVC Compiler 19.51)
+    if (!is_constant_evaluated())
+#endif // ^^^ workaround ^^^
+    {
+        assert(x.loc.function_name() == "sloc_constructor_test"sv);
+    }
 #endif // ^^^ basic ^^^
     assert(string_view{x.loc.file_name()}.ends_with(test_cpp));
 }
@@ -120,11 +123,13 @@ constexpr void different_constructor_test() {
 #else // ^^^ EDG / C1XX vvv
     assert(x.loc.column() == 5);
 #endif // ^^^ C1XX ^^^
-#if _USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
-    assert(x.loc.function_name() == THISCALL_OR_CDECL " s::s(int)"sv);
-#else // ^^^ detailed / basic vvv
+#if !_USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
     assert(x.loc.function_name() == "s"sv);
-#endif // ^^^ basic ^^^
+#elif defined(__EDG__) // ^^^ basic / detailed EDG vvv
+    assert(x.loc.function_name() == "__cdecl s::s(int)"sv);
+#else // ^^^ detailed EDG / detailed Other vvv
+    assert(x.loc.function_name() == THISCALL_OR_CDECL " s::s(int)"sv);
+#endif // ^^^ detailed Other ^^^
     assert(string_view{x.loc.file_name()}.ends_with(test_cpp));
 }
 
@@ -137,16 +142,19 @@ constexpr void sub_member_test() {
     assert(s.x.loc.column() == 14);
 #endif // ^^^ !defined(__EDG__) ^^^
 #if _USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
-#if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1285783
-    if (is_constant_evaluated()) {
-        assert(s.x.loc.function_name() == "int __cdecl main(void)"sv);
-    } else
+#if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1285783 (fixed in MSVC Compiler 19.51)
+    if (!is_constant_evaluated())
 #endif // ^^^ workaround ^^^
     {
         assert(s.x.loc.function_name() == "void __cdecl sub_member_test(void)"sv);
     }
 #else // ^^^ detailed / basic vvv
-    assert(s.x.loc.function_name() == "sub_member_test"sv);
+#if !defined(__clang__) && !defined(__EDG__) // TRANSITION, VSO-1285783
+    if (!is_constant_evaluated())
+#endif // ^^^ workaround ^^^
+    {
+        assert(s.x.loc.function_name() == "sub_member_test"sv);
+    }
 #endif // ^^^ basic ^^^
     assert(string_view{s.x.loc.file_name()}.ends_with(test_cpp));
 
@@ -159,11 +167,13 @@ constexpr void sub_member_test() {
 #else // ^^^ EDG / C1XX vvv
     assert(s_i.x.loc.column() == 5);
 #endif // ^^^ C1XX ^^^
-#if _USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
-    assert(s_i.x.loc.function_name() == THISCALL_OR_CDECL " s2::s2(int)"sv);
-#else // ^^^ detailed / basic vvv
+#if !_USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
     assert(s_i.x.loc.function_name() == "s2"sv);
-#endif // ^^^ basic ^^^
+#elif defined(__EDG__) // ^^^ basic / detailed EDG vvv
+    assert(s_i.x.loc.function_name() == "__cdecl s2::s2(int)"sv);
+#else // ^^^ detailed EDG / detailed Other vvv
+    assert(s_i.x.loc.function_name() == THISCALL_OR_CDECL " s2::s2(int)"sv);
+#endif // ^^^ detailed Other ^^^
     assert(string_view{s_i.x.loc.file_name()}.ends_with(test_cpp));
 }
 
@@ -191,13 +201,19 @@ constexpr void lambda_test() {
 #endif // ^^^ basic ^^^
     const string_view fun2{x2.function_name()};
 #if !_USE_DETAILED_FUNCTION_NAME_IN_SOURCE_LOCATION
+#if !defined(__clang__) && !defined(__EDG__)
+    assert(fun2 == "operator ()"sv);
+#else // ^^^ C1XX / Other vvv
     assert(fun2 == "operator()"sv);
+#endif // ^^^ Other ^^^
 #elif defined(__clang__) // ^^^ basic / detailed Clang vvv
     assert(fun2 == "auto " THISCALL_OR_CDECL " lambda_test()::(anonymous class)::operator()(void) const"sv);
-#else // ^^^ detailed Clang / detailed non-Clang vvv
+#elif defined(__EDG__) // ^^^ detailed Clang / detailed EDG vvv
+    assert(fun2 == "__cdecl lambda [](void)->auto::operator()(void)->auto"sv);
+#else // ^^^ detailed EDG / detailed C1XX vvv
     assert(fun2.starts_with("struct std::source_location " THISCALL_OR_CDECL " lambda_test::<lambda_"sv));
     assert(fun2.ends_with("::operator ()(void) const"sv));
-#endif // ^^^ detailed non-Clang ^^^
+#endif // ^^^ detailed C1XX ^^^
     assert(string_view{x1.file_name()}.ends_with(test_cpp));
     assert(string_view{x2.file_name()}.ends_with(test_cpp));
 }
@@ -221,9 +237,11 @@ constexpr void function_template_test() {
     assert(x1.function_name() == "function_template"sv);
 #elif defined(__clang__) // ^^^ basic / detailed Clang vvv
     assert(x1.function_name() == "source_location __cdecl function_template(void) [T = void]"sv);
-#else // ^^^ detailed Clang / detailed non-Clang vvv
+#elif defined(__EDG__) // ^^^ detailed Clang / detailed EDG vvv
+    assert(x1.function_name() == "std::source_location __cdecl function_template<void>(void)"sv);
+#else // ^^^ detailed EDG / detailed C1XX vvv
     assert(x1.function_name() == "struct std::source_location __cdecl function_template<void>(void)"sv);
-#endif // ^^^ detailed non-Clang ^^^
+#endif // ^^^ detailed C1XX ^^^
     assert(string_view{x1.file_name()}.ends_with(test_cpp));
 
     const auto x2 = function_template<int>();
@@ -233,9 +251,11 @@ constexpr void function_template_test() {
     assert(x2.function_name() == "function_template"sv);
 #elif defined(__clang__) // ^^^ basic / detailed Clang vvv
     assert(x2.function_name() == "source_location __cdecl function_template(void) [T = int]"sv);
-#else // ^^^ detailed Clang / detailed non-Clang vvv
+#elif defined(__EDG__) // ^^^ detailed Clang / detailed EDG vvv
+    assert(x2.function_name() == "std::source_location __cdecl function_template<int>(void)"sv);
+#else // ^^^ detailed EDG / detailed C1XX vvv
     assert(x2.function_name() == "struct std::source_location __cdecl function_template<int>(void)"sv);
-#endif // ^^^ detailed non-Clang ^^^
+#endif // ^^^ detailed C1XX ^^^
     assert(string_view{x1.file_name()} == string_view{x2.file_name()});
 }
 

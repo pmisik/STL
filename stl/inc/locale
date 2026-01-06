@@ -22,6 +22,50 @@ _STL_DISABLE_CLANG_WARNINGS
 #undef new
 
 _STD_BEGIN
+template <class _Elem>
+int _LStrcoll(const _Elem* _First1, const _Elem* _Last1, const _Elem* _First2, const _Elem* _Last2,
+    const _Locinfo::_Collvec* _Vector) { // perform locale-specific comparison of _Elem sequences
+    if constexpr (is_same_v<_Elem, char>) {
+        return _Strcoll(_First1, _Last1, _First2, _Last2, _Vector);
+    } else if constexpr (_Is_wchar_or_crtbld_ushort<_Elem>) { // no-op casts if _Elem is wchar_t
+        return _Wcscoll(reinterpret_cast<const wchar_t*>(_First1), reinterpret_cast<const wchar_t*>(_Last1),
+            reinterpret_cast<const wchar_t*>(_First2), reinterpret_cast<const wchar_t*>(_Last2), _Vector);
+    } else {
+        for (; _First1 != _Last1 && _First2 != _Last2; ++_First1, ++_First2) {
+            if (*_First1 < *_First2) {
+                return -1; // [_First1, _Last1) < [_First2, _Last2)
+            } else if (*_First2 < *_First1) {
+                return +1; // [_First1, _Last1) > [_First2, _Last2)
+            }
+        }
+
+        return _First2 != _Last2 ? -1 : _First1 != _Last1 ? +1 : 0;
+    }
+}
+
+template <class _Elem>
+size_t _LStrxfrm(_Out_writes_(_Last1 - _First1) _Post_readable_size_(return) _Elem* _First1, _Elem* _Last1,
+    _In_reads_(_Last2 - _First2) const _Elem* _First2, const _Elem* _Last2,
+    _In_opt_ const _Locinfo::_Collvec* _Vector) {
+    // perform locale-specific transform of _Elems [_First1, _Last1)
+    if constexpr (is_same_v<_Elem, char>) {
+        return _Strxfrm(_First1, _Last1, _First2, _Last2, _Vector);
+    } else if constexpr (_Is_wchar_or_crtbld_ushort<_Elem>) { // no-op casts if _Elem is wchar_t
+        return _Wcsxfrm(reinterpret_cast<wchar_t*>(_First1), reinterpret_cast<wchar_t*>(_Last1),
+            reinterpret_cast<const wchar_t*>(_First2), reinterpret_cast<const wchar_t*>(_Last2), _Vector);
+    } else {
+        const ptrdiff_t _Count = _Last2 - _First2;
+        if (_Count <= _Last1 - _First1) {
+            _CSTD memcpy(_First1, _First2, _Count * sizeof(_Elem));
+        }
+
+        return _Count;
+    }
+}
+
+template <class _Elem>
+class _Regex_traits;
+
 _EXPORT_STD template <class _Elem>
 class collate : public locale::facet { // facet for ordering sequences of elements
 public:
@@ -94,10 +138,14 @@ protected:
         size_t _Count;
         string_type _Str;
 
-        for (_Count = static_cast<size_t>(_Last - _First); 0 < _Count;) {
+        for (_Count = static_cast<size_t>(_Last - _First); _Str.size() < _Count;) {
             // grow string if locale-specific strxfrm fails
             _Str.resize(_Count);
-            if ((_Count = _LStrxfrm(&_Str[0], &_Str[0] + _Str.size(), _First, _Last, &_Coll)) <= _Str.size()) {
+            _Count = _LStrxfrm(&_Str[0], &_Str[0] + _Str.size(), _First, _Last, &_Coll);
+
+            if (_Count == static_cast<size_t>(-1)) {
+                // return empty string in case of error
+                _Count = 0;
                 break;
             }
         }
@@ -107,12 +155,14 @@ protected:
 
     _NODISCARD virtual long __CLR_OR_THIS_CALL do_hash(const _Elem* _First, const _Elem* _Last) const {
         // compute hash code for [_First, _Last)
-        _Adl_verify_range(_First, _Last);
-        return static_cast<long>(_Hash_array_representation(_First, static_cast<size_t>(_Last - _First)));
+        const auto _Sortkey = collate::do_transform(_First, _Last);
+        return static_cast<long>(_Hash_array_representation(_Sortkey.data(), _Sortkey.size()));
     }
 
 private:
-    _Locinfo::_Collvec _Coll; // used by _LStrcoll and _XStrxfrm
+    _Locinfo::_Collvec _Coll; // used by _LStrcoll and _LStrxfrm
+
+    friend _Regex_traits<_Elem>;
 };
 
 #ifdef __clang__
@@ -157,7 +207,7 @@ protected:
 _EXPORT_STD template <class _Facet>
 _NODISCARD bool has_facet(const locale& _Loc) noexcept {
     _BEGIN_LOCK(_LOCK_LOCALE) // the thread lock, make get atomic
-    size_t _Id = _Facet::id;
+    size_t _Id = _Facet::id._Get_index();
     return _Loc._Getfacet(_Id) || _Facet::_Getcat() != static_cast<size_t>(-1);
     _END_LOCK()
 }

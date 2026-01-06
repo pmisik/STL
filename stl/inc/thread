@@ -24,7 +24,7 @@
 #endif // _HAS_CXX20
 
 #if _HAS_CXX23
-#include <format>
+#include <__msvc_formatter.hpp>
 #endif // _HAS_CXX23
 
 #pragma pack(push, _CRT_PACKING)
@@ -169,7 +169,7 @@ _NODISCARD auto _To_absolute_time(const chrono::duration<_Rep, _Period>& _Rel_ti
     const auto _Now                      = chrono::steady_clock::now();
     decltype(_Now + _Rel_time) _Abs_time = _Now; // return common type
     if (_Rel_time > _Zero) {
-        constexpr auto _Forever = (chrono::steady_clock::time_point::max)();
+        constexpr auto _Forever = (decltype(_Abs_time)::max)();
         if (_Abs_time < _Forever - _Rel_time) {
             _Abs_time += _Rel_time;
         } else {
@@ -309,11 +309,8 @@ basic_ostream<_Ch, _Tr>& operator<<(basic_ostream<_Ch, _Tr>& _Str, thread::id _I
 // constrained to character types supported by `format`.
 template <_Format_supported_charT _CharT>
 struct formatter<thread::id, _CharT> {
-private:
-    using _Pc = basic_format_parse_context<_CharT>;
-
-public:
-    constexpr _Pc::iterator parse(_Pc& _Parse_ctx) {
+    template <class _Pc = basic_format_parse_context<_CharT>> // improves throughput, see GH-5003
+    constexpr _Pc::iterator parse(type_identity_t<_Pc&> _Parse_ctx) {
         return _Impl._Parse(_Parse_ctx);
     }
 
@@ -330,6 +327,9 @@ public:
 private:
     _Fill_align_and_width_formatter<_CharT> _Impl;
 };
+
+template <>
+inline constexpr bool enable_nonlocking_formatter_optimization<thread::id> = true;
 #endif // _HAS_CXX23
 
 template <>

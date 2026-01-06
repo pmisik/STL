@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -160,6 +161,60 @@ constexpr bool test_nested_range() {
     return true;
 }
 
+template <class T, class A = std::allocator<T>>
+union union_vector {
+    std::vector<T, A> vec_;
+
+    constexpr union_vector() : vec_() {}
+    constexpr union_vector(const union_vector& other) : vec_(other.vec_) {}
+    constexpr union_vector(union_vector&& other) noexcept : vec_(std::move(other.vec_)) {}
+
+    template <class U>
+        requires (!std::same_as<std::remove_cvref_t<U>, union_vector>)
+              && (!std::same_as<std::remove_cvref_t<U>, std::vector<T, A>>)
+              && requires(U&& u) { std::vector<T, A>(std::forward<U>(u)); }
+    constexpr explicit union_vector(U&& u) : vec_(std::forward<U>(u)) {}
+
+    template <class T1, class T2, class... Ts>
+        requires requires(T1&& t1, T2&& t2, Ts&&... ts) {
+            std::vector<T, A>(std::forward<T1>(t1), std::forward<T2>(t2), std::forward<Ts>(ts)...);
+        }
+    constexpr union_vector(T1&& t1, T2&& t2, Ts&&... ts)
+        : vec_(std::forward<T1>(t1), std::forward<T2>(t2), std::forward<Ts>(ts)...) {}
+
+    constexpr union_vector& operator=(const union_vector& other) {
+        vec_ = other.vec_;
+        return *this;
+    }
+    constexpr union_vector& operator=(union_vector&& other)
+        noexcept(std::is_nothrow_move_assignable_v<std::vector<T, A>>) {
+        vec_ = std::move(other.vec_);
+        return *this;
+    }
+
+    constexpr ~union_vector() noexcept {
+        vec_.~vector();
+    }
+};
+
+template <ranges::input_range R, class A = std::allocator<ranges::range_value_t<R>>>
+union_vector(std::from_range_t, R&&, A = A()) -> union_vector<ranges::range_value_t<R>, A>;
+
+constexpr bool test_to_union() {
+    constexpr int src[]{42, 1729};
+
+    assert(ranges::equal(ranges::to<union_vector<long>>(src).vec_, src));
+    assert(ranges::equal((src | ranges::to<union_vector<long>>()).vec_, src));
+
+    static_assert(std::same_as<decltype(ranges::to<union_vector>(src)), union_vector<int>>);
+    assert(ranges::equal(ranges::to<union_vector>(src).vec_, src));
+
+    static_assert(std::same_as<decltype(src | ranges::to<union_vector>()), union_vector<int>>);
+    assert(ranges::equal((src | ranges::to<union_vector>()).vec_, src));
+
+    return true;
+}
+
 struct ContainerLike {
     template <std::input_iterator Iter>
     constexpr ContainerLike(Iter first, Iter last) : dist(static_cast<std::ptrdiff_t>(ranges::distance(first, last))) {}
@@ -233,8 +288,8 @@ public:
     constexpr restricted_vector(const size_type n, const T& val, const A& alloc = A()) : base_type(n, val, alloc) {}
     constexpr restricted_vector(const std::initializer_list<T> il, const A& alloc = A()) : base_type(il, alloc) {}
     constexpr restricted_vector(const restricted_vector& other, const A& alloc) : base_type(other, alloc) {}
-    constexpr restricted_vector(restricted_vector&& other, const A& alloc) noexcept(
-        std::allocator_traits<A>::is_always_equal::value)
+    constexpr restricted_vector(restricted_vector&& other, const A& alloc)
+        noexcept(std::allocator_traits<A>::is_always_equal::value)
         : base_type(std::move(other), alloc) {}
 
     using base_type::begin;
@@ -336,6 +391,30 @@ constexpr bool test_lwg4016() {
     return true;
 }
 
+struct adl_only_range {
+    static constexpr int numbers[2]{42, 1729};
+
+    void begin() const = delete;
+    void end() const   = delete;
+
+    friend constexpr const int* begin(const adl_only_range&) {
+        return ranges::begin(numbers);
+    }
+    friend constexpr const int* end(const adl_only_range&) {
+        return ranges::end(numbers);
+    }
+};
+
+constexpr bool test_lwg4016_regression() {
+    using vec = restricted_vector<restriction_kind::push_back, int>;
+
+    ranges::contiguous_range auto r = adl_only_range{};
+    auto v                          = r | ranges::to<vec>();
+    assert(ranges::equal(v, adl_only_range::numbers));
+
+    return true;
+}
+
 int main() {
     test_reservable();
     static_assert(test_reservable());
@@ -344,9 +423,10 @@ int main() {
     static_assert(test_common_constructible());
 
     test_nested_range();
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, VSO-1588614
     static_assert(test_nested_range());
-#endif // ^^^ no workaround ^^^
+
+    test_to_union();
+    static_assert(test_to_union());
 
     test_lwg3733();
     static_assert(test_lwg3733());
@@ -356,4 +436,7 @@ int main() {
 
     test_lwg4016();
     static_assert(test_lwg4016());
+
+    test_lwg4016_regression();
+    static_assert(test_lwg4016_regression());
 }

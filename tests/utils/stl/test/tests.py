@@ -30,6 +30,8 @@ class TestType(Flag):
 
 
 class STLTest(Test):
+    compilerNotFound = set()
+
     def __init__(self, suite, pathInSuite, litConfig, testConfig, envlstEntry, envNum):
         self.envNum = envNum
         self.envlstEntry = envlstEntry
@@ -71,9 +73,12 @@ class STLTest(Test):
             return Result(UNSUPPORTED, "Test does not require any of the features specified in limit_to_features: %s" %
                           msg)
 
+        if 'test-only-edg' in self.config.available_features and 'edg' not in self.requires:
+            return Result(UNSUPPORTED, 'We run only /BE tests with the test-only-edg flag')
+
         if 'edg_drop' in self.config.available_features:
-            if not 'edg' in self.requires:
-                return Result(UNSUPPORTED, 'We only run /BE tests with the edg drop')
+            if 'edg' not in self.requires:
+                return Result(UNSUPPORTED, 'We run only /BE tests with the edg drop')
 
             _, tmpBase = self.getTempPaths()
             self.isenseRspPath = tmpBase + '.isense.rsp'
@@ -214,7 +219,9 @@ class STLTest(Test):
                 _compilerPathCache[envCompiler] = cxx
 
         if not cxx:
-            litConfig.warning('Could not find: %r' % envCompiler)
+            if envCompiler not in self.compilerNotFound:
+                self.compilerNotFound.add(envCompiler)
+                litConfig.warning('Could not find: %r' % envCompiler)
             return Result(SKIPPED, 'This test was skipped because the compiler, "' +
                                    envCompiler + '", could not be found')
 
@@ -225,19 +232,23 @@ class STLTest(Test):
         self.compileFlags.extend(self.envlstEntry.getEnvVal('PM_CL', '').split())
         self.linkFlags.extend(self.envlstEntry.getEnvVal('PM_LINK', '').split())
 
+        targetArch = litConfig.target_arch.casefold()
         if ('clang'.casefold() in os.path.basename(cxx).casefold()):
             self._addCustomFeature('clang')
             self._addCustomFeature('gcc-style-warnings')
 
-            targetArch = litConfig.target_arch.casefold()
             if (targetArch == 'x64'.casefold()):
                 self.compileFlags.append('-m64')
             elif (targetArch == 'x86'.casefold()):
                 self.compileFlags.append('-m32')
-            elif (targetArch == 'arm'.casefold()):
-                return Result(UNSUPPORTED, 'clang targeting arm is not supported')
             elif (targetArch == 'arm64'.casefold()):
                 self.compileFlags.append('--target=arm64-pc-windows-msvc')
+            elif (targetArch == 'arm64ec'.casefold()):
+                self.compileFlags.append('--target=arm64ec-pc-windows-msvc')
+                # TRANSITION, GH-5825: As of Clang 20, compiling with `-fuse-ld=link` (avoiding lld-link)
+                # appears to be critically necessary for unknown reasons.
+                self.compileFlags.append('-fuse-ld=link')
+                self.linkFlags.append('/machine:arm64ec')
         elif ('nvcc'.casefold() in os.path.basename(cxx).casefold()):
             self._addCustomFeature('nvcc')
 
@@ -245,6 +256,15 @@ class STLTest(Test):
             self.requires.append('x64')
         else:
             self._addCustomFeature('cl-style-warnings')
+
+            if (targetArch == 'arm64ec'.casefold()):
+                self.compileFlags.append('/arm64EC')
+                self.linkFlags.append('/machine:arm64ec')
+
+                # TRANSITION, Windows SDK 10.0.26100 emits
+                # "warning C28301: No annotations for first declaration of 'meow'"
+                # for various intrinsics when building for ARM64EC.
+                self.compileFlags.append('/wd28301')
 
         self.cxx = os.path.normpath(cxx)
         return None
@@ -268,10 +288,16 @@ class STLTest(Test):
                 foundStd = True
                 if flag[5:] == 'c++latest':
                     self._addCustomFeature('c++23')
+                    self._addCustomFeature('std-at-least-c++23')
+                    self._addCustomFeature('std-at-least-c++20')
+                    self._addCustomFeature('std-at-least-c++17')
                 elif flag[5:] == 'c++20':
                     self._addCustomFeature('c++20')
+                    self._addCustomFeature('std-at-least-c++20')
+                    self._addCustomFeature('std-at-least-c++17')
                 elif flag[5:] == 'c++17':
                     self._addCustomFeature('c++17')
+                    self._addCustomFeature('std-at-least-c++17')
                 elif flag[5:] == 'c++14':
                     self._addCustomFeature('c++14')
             elif flag[1:11] == 'fsanitize=':
@@ -290,8 +316,6 @@ class STLTest(Test):
                 self.requires.append('edg') # available for x64, see features.py
             elif flag[1:] == 'arch:AVX2':
                 self.requires.append('arch_avx2') # available for x86 and x64, see features.py
-            elif flag[1:] == 'arch:VFPv4':
-                self.requires.append('arch_vfpv4') # available for arm, see features.py
             elif flag[1:] == 'MDd':
                 self._addCustomFeature('MDd')
                 self._addCustomFeature('debug_CRT')

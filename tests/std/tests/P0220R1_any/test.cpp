@@ -38,7 +38,7 @@
 // Silence a warning emitted by test/std/utilities/any/any.class/any.cons/default.pass.cpp below.
 #pragma warning(disable : 4640) // construction of local static object is not thread-safe
 
-// clang-format off
+// clang-format off: avoid diverging from external code
 // LLVM SOURCES BEGIN
 // -- BEGIN: test/std/utilities/any/any.class/any.assign/copy.pass.cpp
 //===----------------------------------------------------------------------===//
@@ -701,7 +701,7 @@ int run_test()
         struct TestConstexpr : public std::any {
           constexpr TestConstexpr() : std::any() {}
         };
-        static TEST_CONSTINIT std::any a;
+        TEST_CONSTINIT static std::any a;
         (void)a;
     }
 #endif // ^^^ no workaround ^^^

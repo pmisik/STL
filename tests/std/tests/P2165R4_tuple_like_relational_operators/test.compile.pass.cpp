@@ -59,7 +59,7 @@ constexpr bool test() {
         static_assert(verify_comparisons<tuple<int, int>, pair<int, int>>);
         static_assert(!verify_comparisons<tuple<int, int>, pair<int, Incomparable>>);
         static_assert(!verify_comparisons<tuple<int*, int*>,
-                      subrange<int*, int*>>); // subrange does not model equality_comparable
+            subrange<int*, int*>>); // subrange does not model equality_comparable
 
         static_assert(tuple{1, 2} == array<int, 2>{1, 2});
         static_assert(tuple<int, int>{2, 1} != array<int, 2>{1, 2});
@@ -76,8 +76,8 @@ constexpr bool test() {
         int a    = 0;
         int b    = 1;
         int c[2] = {2, 3};
-        static_assert(tuple{&a, &b} == subrange{&a, &b});
-        static_assert(tuple{&b, &a} != subrange{&a, &b});
+        static_assert(tuple{&c[0], &c[1]} == subrange{&c[0], &c[1]});
+        static_assert(tuple{&c[1], &c[0]} != subrange{&c[0], &c[1]});
         static_assert(is_eq(tuple{&a, &b} <=> pair{&a, &b}));
         static_assert(is_lt(tuple{&c[0], &c[0]} <=> pair{&c[0], &c[1]}));
         static_assert(is_gt(tuple{&c[1], &c[0]} <=> pair{&c[0], &c[1]}));

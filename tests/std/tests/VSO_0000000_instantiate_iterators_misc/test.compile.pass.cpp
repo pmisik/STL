@@ -17,13 +17,10 @@
 #define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
 #define _SILENCE_CXX20_REL_OPS_DEPRECATION_WARNING
 #define _SILENCE_CXX20_U8PATH_DEPRECATION_WARNING
+#define _SILENCE_CXX20_VOLATILE_DEPRECATION_WARNING
 #define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
-#define _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING
-#define _SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING
-#define _USE_NAMED_IDL_NAMESPACE 1
 
 #include <algorithm>
-// #include <any> // All templates instantiated in P0220R1_any
 #include <array>
 #include <cassert>
 #include <ccomplex>
@@ -54,7 +51,6 @@
 #include <cwctype>
 #include <deque>
 #include <exception>
-#include <filesystem>
 #include <forward_list>
 #include <fstream>
 #include <functional>
@@ -72,7 +68,6 @@
 #include <memory>
 #include <new>
 #include <numeric>
-// #include <optional> // All templates instantiated in P0220R1_optional
 #include <ostream>
 #include <random>
 #include <ratio>
@@ -85,11 +80,18 @@
 #include <strstream>
 #include <system_error>
 #include <tuple>
+#include <type_traits>
 #include <typeindex>
 #include <typeinfo>
 #include <utility>
-// #include <variant> // All templates instantiated in P0088R3_variant
 #include <vector>
+
+#if _HAS_CXX17
+#include <filesystem>
+// #include <any> // All templates instantiated in P0220R1_any
+// #include <optional> // All templates instantiated in P0220R1_optional
+// #include <variant> // All templates instantiated in P0088R3_variant
+#endif // _HAS_CXX17
 
 // Headers not allowed with /clr:pure
 #ifndef _M_CEE_PURE
@@ -101,8 +103,7 @@
 #include <thread>
 #endif // _M_CEE_PURE
 
-#include <experimental/filesystem>
-
+#include <experimental_filesystem.hpp>
 #include <instantiate_containers_iterators_common.hpp>
 
 
@@ -344,7 +345,7 @@ void exception_test() {
 }
 
 template <typename CharType>
-void filesystem_test_impl(const CharType* c_str) {
+void experimental_filesystem_test_impl(const CharType* c_str) {
     using namespace experimental::filesystem;
 
     basic_string<CharType> str = c_str;
@@ -389,17 +390,78 @@ void filesystem_test_impl(const CharType* c_str) {
     (void) u8path(u8str.c_str());
 }
 
-void filesystem_test() {
-    filesystem_test_impl("narrow");
-    filesystem_test_impl(L"wide");
+void experimental_filesystem_test() {
+    experimental_filesystem_test_impl("narrow");
+    experimental_filesystem_test_impl(L"wide");
 #ifndef _M_CEE_PURE
 #ifdef __cpp_char8_t
-    filesystem_test_impl(u8"utf8");
+    experimental_filesystem_test_impl(u8"utf8");
 #endif // __cpp_char8_t
-    filesystem_test_impl(u"utf16");
-    filesystem_test_impl(U"utf32");
+    experimental_filesystem_test_impl(u"utf16");
+    experimental_filesystem_test_impl(U"utf32");
 #endif // _M_CEE_PURE
 }
+
+#if _HAS_CXX17
+template <typename CharType>
+void standard_filesystem_test_impl(const CharType* c_str) {
+    using namespace filesystem;
+
+    basic_string<CharType> str = c_str;
+
+    path p0(str.begin(), str.end());
+    path p1(c_str);
+    path p2(str);
+
+    if constexpr (is_same_v<CharType, char>) {
+        locale default_locale{};
+        path p3(str.begin(), str.end(), default_locale);
+        path p4(c_str, default_locale);
+        path p5(str, default_locale);
+    }
+
+    p0 = c_str;
+    p0 = str;
+    p0.assign(str.begin(), str.end());
+    p0.assign(c_str);
+    p0.assign(str);
+    p0 /= c_str;
+    p0 /= str;
+    p0.append(str.begin(), str.end());
+    p0.append(c_str);
+    p0 += *c_str;
+    p0 += str;
+    p0 += c_str;
+    p0.concat(str.begin(), str.end());
+    p0.concat(str.begin());
+    p0.concat(c_str);
+    p0.concat(str);
+
+    (void) p0.string<CharType>(str.get_allocator());
+    (void) p0.generic_string<CharType>(str.get_allocator());
+
+    stringstream ss{};
+
+    ss << p0;
+    ss >> p0;
+
+    auto u8str = p0.u8string();
+    (void) u8path(u8str.begin(), u8str.end());
+    (void) u8path(u8str.c_str());
+}
+
+void standard_filesystem_test() {
+    standard_filesystem_test_impl("narrow");
+    standard_filesystem_test_impl(L"wide");
+#ifndef _M_CEE_PURE
+#ifdef __cpp_char8_t
+    standard_filesystem_test_impl(u8"utf8");
+#endif // __cpp_char8_t
+    standard_filesystem_test_impl(u"utf16");
+    standard_filesystem_test_impl(U"utf32");
+#endif // _M_CEE_PURE
+}
+#endif // _HAS_CXX17
 
 template <typename CharType>
 void fstream_test_impl() {
@@ -554,10 +616,12 @@ void future_test() {
     swap_test(pv);
 
     packaged_task<void()> pt([]() {});
+    // GH-321: "<future>: packaged_task can't be constructed from a move-only lambda"
+    packaged_task<void()> pt2([uptr = unique_ptr<int>{}]() { (void) uptr; });
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
     packaged_task<void()> pta(allocator_arg, allocator<double>{}, []() {});
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
+    // GH-321: "<future>: packaged_task can't be constructed from a move-only lambda"
+    packaged_task<void()> pta2(allocator_arg, allocator<double>{}, [uptr = unique_ptr<int>{}]() { (void) uptr; });
 
     swap_test(pt);
 
@@ -566,9 +630,7 @@ void future_test() {
 
     TRAIT_V(uses_allocator, promise<int>, allocator<double>);
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
     TRAIT_V(uses_allocator, packaged_task<void()>, allocator<double>);
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
 }
 #endif // _M_CEE_PURE
 
@@ -651,22 +713,6 @@ void nonmember_iterator_functions_test() {
     (void) cend(c);
 }
 
-void msvc_array_iterators_test() {
-    using namespace stdext;
-    int arr[] = {1, 2, 3, 4};
-
-    auto unchecked = make_unchecked_array_iterator(arr);
-    auto checked   = make_checked_array_iterator(arr, size(arr));
-
-    random_access_iterator_test(unchecked);
-    random_access_iterator_test(checked);
-
-    swap_test(unchecked);
-    swap_test(checked);
-    comparable_test(unchecked);
-    comparable_test(checked);
-}
-
 void iterators_test() {
     fwd_iterators_test<forward_list<int>>();
     fwd_iterators_test<list<int>>();
@@ -685,8 +731,6 @@ void iterators_test() {
     nonmember_reverse_iterator_functions_test<initializer_list<int>>();
     nonmember_reverse_iterator_functions_test<list<int>>();
     nonmember_reverse_iterator_functions_test<vector<int>>();
-
-    msvc_array_iterators_test();
 
     int arr[]                = {1};
     initializer_list<int> il = {2};
@@ -806,7 +850,7 @@ void limits_test() {
 void locale_test() {
     char c{};
     locale loc{};
-    // need all collates to instantiate xlocinfo _Lstrcoll and _Lstrxfrm
+    // need all collates to instantiate <locale> _Lstrcoll and _Lstrxfrm
     auto cc   = has_facet<collate<char>>(loc);
     auto cw   = has_facet<collate<wchar_t>>(loc);
     auto cbnc = has_facet<collate_byname<char>>(loc);
@@ -1068,13 +1112,6 @@ void engine_test_impl() {
     common_engine_test_impl<Engine>(ss);
 }
 
-template <typename Engine>
-void tr1_engine_test_impl() {
-    random_device rd{};
-    mt19937 gen(rd());
-    common_engine_test_impl<Engine>(gen);
-}
-
 void random_test() {
     seed_seq ss0({1, 2, 3, 4, 5, 6});
     vector<uint32_t> v{1, 2, 3, 4};
@@ -1086,29 +1123,15 @@ void random_test() {
     mt19937 gen(rd());
     (void) generate_canonical<double, 10>(gen);
 
-    engine_test_impl<minstd_rand0>(); // linear congruential engine
-    engine_test_impl<mt19937>(); // mersenne twister engine
+    engine_test_impl<minstd_rand0>(); // linear_congruential_engine
+    engine_test_impl<mt19937>(); // mersenne_twister_engine
     engine_test_impl<ranlux24_base>(); // subtract_with_carry_engine
-    engine_test_impl<ranlux24>(); // discard block engine
+    engine_test_impl<ranlux24>(); // discard_block_engine
     engine_test_impl<knuth_b>(); // shuffle_order_engine
     engine_test_impl<independent_bits_engine<minstd_rand0, 2, uint32_t>>();
     engine_test_impl<mt19937_64>();
     engine_test_impl<ranlux48_base>();
     engine_test_impl<ranlux48>();
-
-    linear_congruential<uint_fast32_t, 16807, 0, 2147483647> minstd_rand_eng(gen);
-    minstd_rand_eng.seed(gen);
-
-    tr1_engine_test_impl<linear_congruential<uint_fast32_t, 16807, 0, 2147483647>>();
-
-#if _HAS_TR1_NAMESPACE
-    tr1_engine_test_impl<ranlux3>();
-    tr1_engine_test_impl<ranlux4>();
-    tr1_engine_test_impl<ranlux3_01>();
-    tr1_engine_test_impl<ranlux4_01>();
-    tr1_engine_test_impl<ranlux64_base_01>();
-    tr1_engine_test_impl<ranlux_base_01>();
-#endif // _HAS_TR1_NAMESPACE
 
     uniform_int_distribution<> uni_int_d{};
     bernoulli_distribution bern_d{};

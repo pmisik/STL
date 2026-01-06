@@ -513,10 +513,8 @@ namespace test_convertible_to {
     static_assert(convertible_to<char (&)[], ConvertsFrom<char const*>>);
 
     // volatile array glvalues
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, DevCom-1627396
     static_assert(convertible_to<int volatile (&)[42], int volatile (&)[42]>);
     static_assert(convertible_to<int volatile (&)[42][13], int volatile (&)[42][13]>);
-#endif // ^^^ no workaround ^^^
     static_assert(convertible_to<int volatile (&&)[42], int volatile (&&)[42]>);
     static_assert(convertible_to<int volatile (&&)[42][13], int volatile (&&)[42][13]>);
 
@@ -696,10 +694,8 @@ namespace test_common_reference_with {
     static_assert(test<SimpleBase, ConvertsFrom<int, SimpleBase>>());
 
     static_assert(test<int volatile&, int volatile&>());
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, DevCom-1627396
     static_assert(test<int volatile (&)[42], int volatile (&)[42]>());
     static_assert(test<int volatile (&)[42][13], int volatile (&)[42][13]>());
-#endif // ^^^ no workaround ^^^
     static_assert(test<int volatile (&&)[42], int volatile (&&)[42]>());
     static_assert(test<int volatile (&&)[42][13], int volatile (&&)[42][13]>());
 } // namespace test_common_reference_with
@@ -1549,7 +1545,7 @@ namespace test_default_initializable {
 #endif // ^^^ no workaround ^^^
 
     // Also test GH-1603 "default_initializable accepts types that are not default-initializable"
-#if defined(__clang__) // TRANSITION, DevCom-1326684 (MSVC) and VSO-1898945 (EDG)
+#ifndef __EDG__ // TRANSITION, VSO-1898945
     static_assert(!default_initializable<AggregatesExplicitDefault>);
 #endif // ^^^ no workaround ^^^
 } // namespace test_default_initializable
@@ -2022,10 +2018,8 @@ namespace test_swappable_with {
 
     static_assert(test<int (&)[2][2], int (&)[2][2]>());
 
-#if defined(__clang__) || defined(__EDG__) // TRANSITION, DevCom-1627396
     static_assert(test<int volatile (&)[4], int volatile (&)[4]>());
     static_assert(test<int volatile (&)[3][4], int volatile (&)[3][4]>());
-#endif // ^^^ no workaround ^^^
 
     static_assert(test<MovableFriendSwap, MovableFriendSwap>() == is_permissive);
     static_assert(test<MovableFriendSwap&, MovableFriendSwap&>());
@@ -2874,12 +2868,12 @@ namespace test_invocable_concepts {
 #include "invocable_cc.hpp"
 
 #ifndef _M_CEE // avoid warning C4575: '__vectorcall' incompatible with the '/clr' option: converting to '__stdcall'
-#if !defined(_M_ARM) && !defined(_M_ARM64) && !defined(_M_ARM64EC)
+#if !defined(_M_ARM64) && !defined(_M_ARM64EC)
 #define NAME      test_vector_vector
 #define CALLCONV  __vectorcall
 #define MCALLCONV __vectorcall
 #include "invocable_cc.hpp"
-#endif // ^^^ !ARM && !ARM64 && !ARM64EC ^^^
+#endif // ^^^ !ARM64 && !ARM64EC ^^^
 #endif // _M_CEE
 
 } // namespace test_invocable_concepts
@@ -2912,7 +2906,7 @@ namespace test_predicate {
     void test() {
         {
             using Fn  = Bool (tag::*)(int);
-            using RFn = Bool (tag::*)(int)&&;
+            using RFn = Bool (tag::*)(int) &&;
             {
                 // N4849 [func.require]/1.1: "... f is a pointer to member function of a class T and
                 // is_base_of_v<T, remove_reference_t<decltype(t_1)>> is true"
@@ -3323,8 +3317,8 @@ namespace test_relation {
 
     struct Equivalent {
         template <class T, class U>
-        constexpr decltype(auto) operator()(T && t, U && u) const
-            requires requires { static_cast<T&&>(t) == static_cast<U&&>(u); }
+        constexpr decltype(auto) operator()(T&& t, U&& u) const
+            requires requires { static_cast<T &&>(t) == static_cast<U &&>(u); }
         {
             return static_cast<T&&>(t) == static_cast<U&&>(u);
         }

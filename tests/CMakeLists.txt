@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+find_package(Python "3.14.0" REQUIRED COMPONENTS Interpreter)
+
 set(STL_BUILD_ROOT "${PROJECT_BINARY_DIR}/out")
 set(STL_SOURCE_DIR "${PROJECT_SOURCE_DIR}")
 set(STL_TEST_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
@@ -23,22 +25,13 @@ add_subdirectory(tr1)
 # chance to add to the config map and test directory global properties.
 add_subdirectory(utils/stl-lit)
 
-find_package(Python "3.12" REQUIRED COMPONENTS Interpreter)
-
 if(NOT DEFINED LIT_FLAGS)
-    list(APPEND LIT_FLAGS "-o" "${CMAKE_CURRENT_BINARY_DIR}/test_results.json")
+    set(LIT_FLAGS "-o" "${CMAKE_CURRENT_BINARY_DIR}/test_results.json")
 endif()
 
+set(STL_LIT_COMMAND ${Python_EXECUTABLE} ${STL_LIT_OUTPUT} ${LIT_FLAGS})
 get_property(STL_LIT_TEST_DIRS GLOBAL PROPERTY STL_LIT_TEST_DIRS)
-list(APPEND STL_LIT_COMMAND "${STL_LIT_OUTPUT}"
-                            "${LIT_FLAGS}"
-                            "-D" "notags=ASAN"
-                            "${STL_LIT_TEST_DIRS}")
-list(APPEND STLASAN_LIT_COMMAND "${STL_LIT_OUTPUT}"
-                                "${LIT_FLAGS}"
-                                "-D" "tags=ASAN"
-                                "${STL_LIT_TEST_DIRS}")
 
-add_test(NAME stl COMMAND ${Python_EXECUTABLE} ${STL_LIT_COMMAND} COMMAND_EXPAND_LISTS)
-add_test(NAME stlasan COMMAND ${Python_EXECUTABLE} ${STLASAN_LIT_COMMAND} COMMAND_EXPAND_LISTS)
-set_tests_properties(stl stlasan PROPERTIES RUN_SERIAL ON)
+add_custom_target(STL-CI COMMAND ${STL_LIT_COMMAND} --time-tests -Dnotags=ASAN ${STL_LIT_TEST_DIRS} USES_TERMINAL)
+add_custom_target(STL-ASan-CI COMMAND ${STL_LIT_COMMAND} --time-tests -Dtags=ASAN ${STL_LIT_TEST_DIRS} USES_TERMINAL)
+add_custom_target(test-only-edg COMMAND ${STL_LIT_COMMAND} --time-tests -Dnotags=ASAN -Dtest-only-edg=True --xunit-xml-output test-results.xml ${STL_LIT_TEST_DIRS} USES_TERMINAL)

@@ -73,23 +73,27 @@ namespace execution {
     _EXPORT_STD class sequenced_policy {
         // indicates support for only sequential execution, and requests termination on exceptions
     public:
+        explicit sequenced_policy() = default; // per LWG-4273
+
         using _Standard_execution_policy   = int;
         static constexpr bool _Parallelize = false;
         static constexpr bool _Ivdep       = false;
     };
 
-    _EXPORT_STD inline constexpr sequenced_policy seq{/* unspecified */};
+    _EXPORT_STD inline constexpr sequenced_policy seq{};
 
     _EXPORT_STD class parallel_policy {
         // indicates support by element access functions for parallel execution with parallel forward progress
         // guarantees, and requests termination on exceptions
     public:
+        explicit parallel_policy() = default; // per LWG-4273
+
         using _Standard_execution_policy   = int;
         static constexpr bool _Parallelize = true;
         static constexpr bool _Ivdep       = true;
     };
 
-    _EXPORT_STD inline constexpr parallel_policy par{/* unspecified */};
+    _EXPORT_STD inline constexpr parallel_policy par{};
 
     _EXPORT_STD class parallel_unsequenced_policy {
         // indicates support by element access functions for parallel execution with weakly parallel forward progress
@@ -97,12 +101,14 @@ namespace execution {
         //
         // (at this time, equivalent to parallel_policy)
     public:
+        explicit parallel_unsequenced_policy() = default; // per LWG-4273
+
         using _Standard_execution_policy   = int;
         static constexpr bool _Parallelize = true;
         static constexpr bool _Ivdep       = true;
     };
 
-    _EXPORT_STD inline constexpr parallel_unsequenced_policy par_unseq{/* unspecified */};
+    _EXPORT_STD inline constexpr parallel_unsequenced_policy par_unseq{};
 
 #if _HAS_CXX20
     _EXPORT_STD class unsequenced_policy {
@@ -112,12 +118,14 @@ namespace execution {
         // (at this time, equivalent to sequenced_policy except for for_each(_n), destroy(_n),
         // uninitialized_default_construct(_n), and uninitialized_value_construct(_n))
     public:
+        explicit unsequenced_policy() = default; // per LWG-4273
+
         using _Standard_execution_policy   = int;
         static constexpr bool _Parallelize = false;
         static constexpr bool _Ivdep       = true;
     };
 
-    _EXPORT_STD inline constexpr unsequenced_policy unseq{/* unspecified */};
+    _EXPORT_STD inline constexpr unsequenced_policy unseq{};
 #endif // _HAS_CXX20
 
 } // namespace execution
@@ -136,11 +144,6 @@ struct is_execution_policy<execution::parallel_unsequenced_policy> : true_type {
 template <>
 struct is_execution_policy<execution::unsequenced_policy> : true_type {};
 #endif // _HAS_CXX20
-
-template <class _Ty, class _FwdIt>
-void _Construct_in_place_by_deref(_Ty& _Val, const _FwdIt& _Iter) {
-    ::new (static_cast<void*>(_STD addressof(_Val))) _Ty(*_Iter);
-}
 
 template <class _Ty, class _UnaryOp, class _FwdIt>
 void _Construct_in_place_by_transform_deref(_Ty& _Val, _UnaryOp _Transform_op, const _FwdIt& _Iter) {
@@ -166,7 +169,7 @@ void _Implicitly_construct_in_place_by_binary_op_transform_deref_rhs(
         _Ty([&]() -> _Ty { return _Reduce_op(_STD forward<_LeftTy>(_Left), _Transform_op(*_Iter)); }());
 }
 
-struct _Parallelism_resources_exhausted : exception {
+struct _NODISCARD _Parallelism_resources_exhausted : exception {
     _NODISCARD const char* __CLR_OR_THIS_CALL what() const noexcept override {
         // return pointer to message string
         return "Insufficient resources were available to use additional parallelism.";
@@ -239,7 +242,7 @@ public:
     }
 
     void _Submit_for_chunks(const size_t _Hw_threads, const size_t _Chunks) const noexcept {
-        _Submit((_STD min)(_Hw_threads * _Oversubmission_multiplier, _Chunks));
+        _Submit((_STD min) (_Hw_threads * _Oversubmission_multiplier, _Chunks));
     }
 
 private:
@@ -275,7 +278,7 @@ constexpr size_t _Get_chunked_work_chunk_count(const size_t _Hw_threads, const _
     // get the number of chunks to break work into to parallelize
     const auto _Size_count = static_cast<size_t>(_Count); // no overflow due to forward iterators
     // we assume _Hw_threads * _Oversubscription_multiplier does not overflow
-    return (_STD min)(_Hw_threads * _Oversubscription_multiplier, _Size_count);
+    return (_STD min) (_Hw_threads * _Oversubscription_multiplier, _Size_count);
 }
 
 template <class _Diff>
@@ -351,7 +354,7 @@ struct _Generalized_sum_drop { // drop off point for GENERALIZED_SUM intermediat
 
     explicit _Generalized_sum_drop(const size_t _Slots)
         : _Data(static_cast<_Ty*>(
-            _Allocate<_New_alignof<_Ty>, _Parallelism_allocate_traits>(_Get_size_of_n<sizeof(_Ty)>(_Slots)))),
+              _Allocate<_New_alignof<_Ty>, _Parallelism_allocate_traits>(_Get_size_of_n<sizeof(_Ty)>(_Slots)))),
           _Slots(_Slots), _Frontier(0) {}
 
     ~_Generalized_sum_drop() noexcept {
@@ -505,7 +508,8 @@ struct _Parallel_choose_max_chunk {
 
 template <class _Ty>
 struct alignas(_Ty) alignas(size_t) alignas(_Atomic_counter_t) _Circular_buffer { // work stealing deque extent type
-    static_assert(is_trivial_v<_Ty>, "Work stealing deques work only with trivial operations");
+    static_assert(is_trivially_copyable_v<_Ty> && is_trivially_default_constructible_v<_Ty>,
+        "Work stealing deques work only with trivial operations");
 
     size_t _Log_size;
     _Atomic_counter_t _Ref_count;
@@ -681,7 +685,9 @@ public:
 private:
     atomic<size_t> _Bottom{0}; // modified by only owning thread
     atomic<size_t> _Top{0}; // modified by all threads
-    _Guarded_by_(_Segment_lock) _Circular_buffer<_Ty>* _Segment{_Circular_buffer<_Ty>::_New_circular_buffer()};
+    // clang-format off: clang-format 20 doesn't understand _Guarded_by_ and will damage the following code
+    _Guarded_by_(_Segment_lock) _Circular_buffer<_Ty>* _Segment { _Circular_buffer<_Ty>::_New_circular_buffer() };
+    // clang-format on
     mutex _Segment_lock{};
 };
 
@@ -830,7 +836,7 @@ struct _Static_partition_team { // common data for all static partitioned ops
 
     _Diff _Get_chunk_offset(const size_t _This_chunk) const {
         const auto _This_chunk_diff = static_cast<_Diff>(_This_chunk);
-        return _This_chunk_diff * _Chunk_size + (_STD min)(_This_chunk_diff, _Unchunked_items);
+        return _This_chunk_diff * _Chunk_size + (_STD min) (_This_chunk_diff, _Unchunked_items);
     }
 
     _Static_partition_key<_Diff> _Get_next_key() {
@@ -1052,7 +1058,7 @@ _Common_diff_t<_InIt1, _InIt2> _Distance_min(_InIt1 _First1, const _InIt1 _Last1
     if constexpr (_Is_ranges_random_iter_v<_InIt1> && _Is_ranges_random_iter_v<_InIt2>) {
         const _CT _Count1 = _Last1 - _First1;
         const _CT _Count2 = _Last2 - _First2;
-        _Result           = (_STD min)(_Count1, _Count2);
+        _Result           = (_STD min) (_Count1, _Count2);
     } else if constexpr (_Is_ranges_random_iter_v<_InIt1>) {
         for (auto _Count1 = _Last1 - _First1; 0 < _Count1 && _First2 != _Last2; --_Count1) {
             ++_First2;
@@ -2779,14 +2785,14 @@ void sort(_ExPo&&, const _RanIt _First, const _RanIt _Last, _Pr _Pred) noexcept 
 }
 
 template <class _Ty>
-struct _Static_partitioned_temporary_buffer2 {
-    _Optimistic_temporary_buffer<_Ty>& _Temp_buf;
+struct _Static_partitioned_temporary_buffer3 {
+    _Optimistic_temporary_buffer2<_Ty>& _Temp_buf;
     ptrdiff_t _Chunk_size;
     ptrdiff_t _Unchunked_items;
 
     template <class _Diff>
-    explicit _Static_partitioned_temporary_buffer2(
-        _Optimistic_temporary_buffer<_Ty>& _Temp_buf_raw, _Static_partition_team<_Diff>& _Team)
+    explicit _Static_partitioned_temporary_buffer3(
+        _Optimistic_temporary_buffer2<_Ty>& _Temp_buf_raw, _Static_partition_team<_Diff>& _Team)
         : _Temp_buf(_Temp_buf_raw), _Chunk_size(static_cast<ptrdiff_t>(_Temp_buf._Capacity / _Team._Chunks)),
           _Unchunked_items(static_cast<ptrdiff_t>(_Temp_buf._Capacity % _Team._Chunks)) {}
 
@@ -2809,7 +2815,7 @@ struct _Static_partitioned_temporary_buffer2 {
     ptrdiff_t _Get_offset(const size_t _Chunk_number) {
         // get the offset of the first element of the temporary buffer allocated to chunk _Chunk_number
         auto _Diff_chunk = static_cast<ptrdiff_t>(_Chunk_number);
-        return _Diff_chunk * _Chunk_size + (_STD min)(_Diff_chunk, _Unchunked_items);
+        return _Diff_chunk * _Chunk_size + (_STD min) (_Diff_chunk, _Unchunked_items);
     }
 
     void _Destroy_all() { // destroy each element of the temporary buffer
@@ -2840,13 +2846,13 @@ inline size_t _Get_stable_sort_tree_height(const size_t _Count, const size_t _Hw
 #else // ^^^ defined(_WIN64) / !defined(_WIN64) vvv
     constexpr size_t _Max_tree_height = 30;
 #endif // ^^^ !defined(_WIN64) ^^^
-    const size_t _Clamped_ideal_chunks = (_STD min)(_Max_tree_height, _Log_ideal_chunks);
+    const size_t _Clamped_ideal_chunks = (_STD min) (_Max_tree_height, _Log_ideal_chunks);
 
     // similarly, if _Clamped_ideal_chunks is odd, that would break our 2 to even power invariant,
     // so go to the next higher power of 2
     const auto _Ideal_tree_height = _Clamped_ideal_chunks + (_Clamped_ideal_chunks & 0x1U);
 
-    return (_STD min)(_Count_max_tree_height, _Ideal_tree_height);
+    return (_STD min) (_Count_max_tree_height, _Ideal_tree_height);
 }
 
 struct _Bottom_up_merge_tree {
@@ -2893,15 +2899,15 @@ struct _Bottom_up_tree_visitor {
 };
 
 template <class _BidIt, class _Pr>
-struct _Static_partitioned_stable_sort3 {
+struct _Static_partitioned_stable_sort4 {
     using _Diff = _Iter_diff_t<_BidIt>;
     _Static_partition_team<_Diff> _Team;
     _Static_partition_range<_BidIt> _Basis;
     _Bottom_up_merge_tree _Merge_tree;
-    _Static_partitioned_temporary_buffer2<_Iter_value_t<_BidIt>> _Temp_buf;
+    _Static_partitioned_temporary_buffer3<_Iter_value_t<_BidIt>> _Temp_buf;
     _Pr _Pred;
 
-    _Static_partitioned_stable_sort3(_Optimistic_temporary_buffer<_Iter_value_t<_BidIt>>& _Temp_buf_raw,
+    _Static_partitioned_stable_sort4(_Optimistic_temporary_buffer2<_Iter_value_t<_BidIt>>& _Temp_buf_raw,
         const _Diff _Count, const size_t _Merge_tree_height_, const _BidIt _First, _Pr _Pred_)
         : _Team(_Count, static_cast<size_t>(1) << _Merge_tree_height_), _Basis{}, _Merge_tree(_Merge_tree_height_),
           _Temp_buf(_Temp_buf_raw, _Team), _Pred{_Pred_} {
@@ -2945,7 +2951,7 @@ struct _Static_partitioned_stable_sort3 {
                     const size_t _Base = _Visitor._Base;
                     const size_t _Mid  = _Base + _Visitor._Shift;
                     const size_t _End  = _Mid + _Visitor._Shift;
-                    _STD _Merge_move(_Temp_buf._Get_first(_Base), _Temp_buf._Get_first(_Mid),
+                    _STD _Merge_move_unchecked(_Temp_buf._Get_first(_Base), _Temp_buf._Get_first(_Mid),
                         _Temp_buf._Get_first(_End), _Basis._Get_first(_Base, _Team._Get_chunk_offset(_Base)), _Pred);
                 }
 
@@ -2963,7 +2969,7 @@ struct _Static_partitioned_stable_sort3 {
                     const size_t _Base = _Visitor._Base;
                     const size_t _Mid  = _Base + _Visitor._Shift;
                     const size_t _End  = _Mid + _Visitor._Shift;
-                    _STD _Merge_move(_Basis._Get_first(_Base, _Team._Get_chunk_offset(_Base)),
+                    _STD _Merge_move_unchecked(_Basis._Get_first(_Base, _Team._Get_chunk_offset(_Base)),
                         _Basis._Get_first(_Mid, _Team._Get_chunk_offset(_Mid)),
                         _Basis._Get_first(_End, _Team._Get_chunk_offset(_End)), _Temp_buf._Get_first(_Base), _Pred);
                 }
@@ -2995,7 +3001,7 @@ struct _Static_partitioned_stable_sort3 {
 
     static void __stdcall _Threadpool_callback(
         __std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
-        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_stable_sort3*>(_Context));
+        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_stable_sort4*>(_Context));
     }
 };
 
@@ -3021,14 +3027,14 @@ void stable_sort(_ExPo&&, const _BidIt _First, const _BidIt _Last, _Pr _Pred) no
         _Attempt_parallelism = false;
     }
 
-    _Optimistic_temporary_buffer<_Iter_value_t<_BidIt>> _Temp_buf{_Attempt_parallelism ? _Count : _Count - _Count / 2};
+    _Optimistic_temporary_buffer2<_Iter_value_t<_BidIt>> _Temp_buf{_Attempt_parallelism ? _Count : _Count - _Count / 2};
     if constexpr (remove_reference_t<_ExPo>::_Parallelize) {
         if (_Attempt_parallelism) {
             // forward+ iterator overflow assumption for size_t cast
             const auto _Tree_height = _Get_stable_sort_tree_height(static_cast<size_t>(_Count), _Hw_threads);
             if (_Tree_height != 0) {
                 _TRY_BEGIN
-                _Static_partitioned_stable_sort3 _Operation{
+                _Static_partitioned_stable_sort4 _Operation{
                     _Temp_buf, _Count, _Tree_height, _UFirst, _STD _Pass_fn(_Pred)};
                 _STD _Run_chunked_parallel_work(_Hw_threads, _Operation);
                 return;
@@ -3298,7 +3304,7 @@ struct _Static_partitioned_is_heap_until2 {
         const auto _Chunk_offset     = _Key._Start_at;
         const auto _Last             = _Chunk_offset + _Chunk_range_size;
 
-        const auto _Initial = (_STD max)(_Chunk_offset, _Diff{1});
+        const auto _Initial = (_STD max) (_Chunk_offset, _Diff{1});
         for (_Diff _Off = _Initial; _Off < _Last; ++_Off) {
             if (_DEBUG_LT_PRED(_Pred, *(_Range_first + ((_Off - 1) >> 1)), *(_Range_first + _Off))) {
                 _Results._Imbue(_Key._Chunk_number, _Range_first + _Off);
@@ -3594,6 +3600,45 @@ _FwdIt partition(_ExPo&&, _FwdIt _First, const _FwdIt _Last, _Pr _Pred) noexcept
 inline constexpr unsigned char _Local_available = 1;
 inline constexpr unsigned char _Sum_available   = 2;
 
+// For scan algorithms: if the intermediate and output types are the same, we can directly store the binary operation
+// result in the output. If not, then we need a place to store intermediate results.
+template <class _Ty, class _Iter>
+constexpr bool _Scan_reuse_output = is_same_v<_Ty, typename iterator_traits<_Iter>::value_type>;
+
+template <class _Ty, class _Iter, bool = _Scan_reuse_output<_Ty, _Iter>>
+class _Scan_intermediate_storage {
+private:
+    _Parallel_vector<_Ty> _Data;
+
+public:
+    template <class _Diff>
+    explicit _Scan_intermediate_storage(const _Static_partition_team<_Diff>&) noexcept {}
+
+    _NODISCARD _Parallel_vector<_Ty>& operator[](size_t) noexcept {
+        return _Data;
+    }
+};
+
+template <class _Ty, class _Iter>
+class _Scan_intermediate_storage<_Ty, _Iter, false> {
+private:
+    _Parallel_vector<_Parallel_vector<_Ty>> _Data;
+
+public:
+    template <class _Diff>
+    explicit _Scan_intermediate_storage(const _Static_partition_team<_Diff>& _Team) : _Data(_Team._Chunks) {
+        const auto _Chunk_size = static_cast<size_t>(_Team._Chunk_size);
+        for (auto& _Vec : _Data) {
+            _Vec.reserve(_Chunk_size);
+        }
+    }
+
+    _NODISCARD _Parallel_vector<_Ty>& operator[](const size_t _Idx) noexcept {
+        _STL_INTERNAL_CHECK(_Idx < _Data.size());
+        return _Data[_Idx];
+    }
+};
+
 template <class _Ty>
 struct _Scan_decoupled_lookback {
     // inter-chunk communication block in "Single-pass Parallel Prefix Scan with Decoupled Look-back" by Merrill and
@@ -3620,7 +3665,8 @@ struct _Scan_decoupled_lookback {
     }
 
     template <class _FwdIt, class _BinOp>
-    void _Apply_exclusive_predecessor(_Ty& _Preceding, _FwdIt _First, const _FwdIt _Last, _BinOp _Reduce_op) {
+    void _Apply_exclusive_predecessor(
+        _Ty& _Preceding, _FwdIt _First, _Ty* _First2, const _FwdIt _Last, _BinOp _Reduce_op) {
         // apply _Preceding to [_First, _Last) and _Sum._Ref(), using _Reduce_op
         _STD _Implicitly_construct_in_place_by_binary_op(_Sum._Ref(), _Reduce_op, _Preceding, _Local._Ref());
         _State.store(_Local_available | _Sum_available);
@@ -3628,19 +3674,30 @@ struct _Scan_decoupled_lookback {
 
 #pragma loop(ivdep)
         while (++_First != _Last) {
-            *_First = _Reduce_op(_Preceding, _STD move(*_First));
+            if constexpr (_Scan_reuse_output<_Ty, _FwdIt>) {
+                *_First = _Reduce_op(_Preceding, _STD move(*_First));
+            } else {
+                ++_First2;
+                *_First = _Reduce_op(_Preceding, _STD move(*_First2));
+            }
         }
     }
 
     template <class _FwdIt, class _BinOp>
-    void _Apply_inclusive_predecessor(_Ty& _Preceding, _FwdIt _First, const _FwdIt _Last, _BinOp _Reduce_op) {
+    void _Apply_inclusive_predecessor(
+        _Ty& _Preceding, _FwdIt _First, _Ty* _First2, const _FwdIt _Last, _BinOp _Reduce_op) {
         // apply _Preceding to [_First, _Last) and _Sum._Ref(), using _Reduce_op
         _STD _Implicitly_construct_in_place_by_binary_op(_Sum._Ref(), _Reduce_op, _Preceding, _Local._Ref());
         _State.store(_Local_available | _Sum_available);
 
 #pragma loop(ivdep)
         for (; _First != _Last; ++_First) {
-            *_First = _Reduce_op(_Preceding, _STD move(*_First));
+            if constexpr (_Scan_reuse_output<_Ty, _FwdIt>) {
+                *_First = _Reduce_op(_Preceding, _STD move(*_First));
+            } else {
+                *_First = _Reduce_op(_Preceding, _STD move(*_First2));
+                ++_First2;
+            }
         }
     }
 
@@ -4342,7 +4399,8 @@ struct _No_init_tag {
 }; // tag to indicate that no initial value is to be used
 
 template <class _FwdIt1, class _FwdIt2, class _BinOp, class _Ty>
-_FwdIt2 _Exclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op, _Ty& _Val) {
+_FwdIt2 _Exclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op, _Ty& _Val,
+    _Parallel_vector<_Ty>& _Intermediate_result) {
     // local-sum for parallel exclusive_scan; writes local sums into [_Dest + 1, _Dest + (_Last - _First)) and stores
     // successor sum in _Val
     // pre: _Val is *uninitialized* && _First != _Last
@@ -4355,8 +4413,13 @@ _FwdIt2 _Exclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _
         }
 
         _Ty _Tmp = _Reduce_op(_Val, *_First); // temp to enable _First == _Dest
-        *_Dest   = _Val;
-        _Val     = _STD move(_Tmp);
+        if constexpr (_Scan_reuse_output<_Ty, _FwdIt2>) {
+            *_Dest = _Val;
+        } else {
+            _STL_INTERNAL_CHECK(_Intermediate_result.size() < _Intermediate_result.capacity());
+            *_Dest = _Intermediate_result.emplace_back(_STD move(_Val));
+        }
+        _Val = _STD move(_Tmp);
     }
 }
 
@@ -4377,19 +4440,20 @@ void _Exclusive_scan_per_chunk_complete(
 }
 
 template <class _FwdIt1, class _FwdIt2, class _Ty, class _BinOp>
-struct _Static_partitioned_exclusive_scan2 {
+struct _Static_partitioned_exclusive_scan3 {
     using _Diff = _Common_diff_t<_FwdIt1, _FwdIt2>;
     _Static_partition_team<_Diff> _Team;
     _Static_partition_range<_FwdIt1, _Diff> _Basis1;
     _Static_partition_range<_FwdIt2, _Diff> _Basis2;
     _Parallel_vector<_Scan_decoupled_lookback<_Ty>> _Lookback;
+    _Scan_intermediate_storage<_Ty, _FwdIt2> _Intermediate_result;
     _Ty& _Initial;
     _BinOp _Reduce_op;
 
-    _Static_partitioned_exclusive_scan2(const size_t _Hw_threads, const _Diff _Count, const _FwdIt1 _First,
+    _Static_partitioned_exclusive_scan3(const size_t _Hw_threads, const _Diff _Count, const _FwdIt1 _First,
         _Ty& _Initial_, _BinOp _Reduce_op_, const _FwdIt2&)
         : _Team{_Count, _Get_chunked_work_chunk_count(_Hw_threads, _Count)}, _Basis1{}, _Basis2{},
-          _Lookback(_Team._Chunks), _Initial(_Initial_), _Reduce_op(_Reduce_op_) {
+          _Lookback(_Team._Chunks), _Intermediate_result{_Team}, _Initial(_Initial_), _Reduce_op(_Reduce_op_) {
         _Basis1._Populate(_Team, _First);
     }
 
@@ -4400,13 +4464,13 @@ struct _Static_partitioned_exclusive_scan2 {
         }
 
         const auto _Chunk_number = _Key._Chunk_number;
-        const auto _In_range     = _Basis1._Get_chunk(_Key);
+        const auto _In_rng       = _Basis1._Get_chunk(_Key);
         const auto _Dest         = _Basis2._Get_first(_Chunk_number, _Team._Get_chunk_offset(_Chunk_number));
         // Run local exclusive_scan on this chunk
         const auto _Chunk = _Lookback.data() + static_cast<ptrdiff_t>(_Chunk_number);
         if (_Chunk_number == 0) { // chunk 0 is special as it has no predecessor; its local and total sums are the same
             _STD _Exclusive_scan_per_chunk_complete(
-                _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _Initial);
+                _In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _Initial);
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
@@ -4415,30 +4479,35 @@ struct _Static_partitioned_exclusive_scan2 {
         if (_Prev_chunk->_State.load() & _Sum_available) {
             // if predecessor sum already complete, we can incorporate its value directly for 1 pass
             _STD _Exclusive_scan_per_chunk_complete(
-                _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
+                _In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
 
         // Calculate local sum and publish to other threads
-        const auto _Last =
-            _STD _Exclusive_scan_per_chunk(_In_range._First, _In_range._Last, _Dest, _Reduce_op, _Chunk->_Local._Ref());
+        const auto _Last = _STD _Exclusive_scan_per_chunk(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op,
+            _Chunk->_Local._Ref(), _Intermediate_result[_Chunk_number]);
         _Chunk->_Store_available_state(_Local_available);
 
         // Apply the predecessor overall sum to current overall sum and elements
         if (_Prev_chunk->_Get_available_state() & _Sum_available) { // predecessor overall sum done, use directly
-            _Chunk->_Apply_exclusive_predecessor(_Prev_chunk->_Sum._Ref(), _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_exclusive_predecessor(
+                _Prev_chunk->_Sum._Ref(), _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         } else {
             auto _Tmp = _STD _Get_lookback_sum(_Prev_chunk, _Reduce_op);
-            _Chunk->_Apply_exclusive_predecessor(_Tmp, _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_exclusive_predecessor(
+                _Tmp, _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         }
 
+        if constexpr (!_Scan_reuse_output<_Ty, _FwdIt2>) {
+            _Intermediate_result[_Chunk_number].clear();
+        }
         return _Cancellation_status::_Running;
     }
 
     static void __stdcall _Threadpool_callback(
         __std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
-        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_exclusive_scan2*>(_Context));
+        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_exclusive_scan3*>(_Context));
     }
 };
 
@@ -4459,7 +4528,7 @@ _FwdIt2 exclusive_scan(_ExPo&&, const _FwdIt1 _First, const _FwdIt1 _Last, _FwdI
             const auto _UDest = _STD _Get_unwrapped_n(_Dest, _Count);
             if (_Count >= 2) { // ... with at least 2 elements
                 _TRY_BEGIN
-                _Static_partitioned_exclusive_scan2 _Operation{
+                _Static_partitioned_exclusive_scan3 _Operation{
                     _Hw_threads, _Count, _UFirst, _Val, _STD _Pass_fn(_Reduce_op), _UDest};
                 _STD _Seek_wrapped(_Dest, _Operation._Basis2._Populate(_Operation._Team, _UDest));
                 // Note that _Val is used as temporary storage by whichever thread runs the first chunk.
@@ -4484,9 +4553,9 @@ _FwdIt2 exclusive_scan(_ExPo&&, const _FwdIt1 _First, const _FwdIt1 _Last, _FwdI
     return _Dest;
 }
 
-template <class _FwdIt1, class _FwdIt2, class _BinOp, class _Ty, class _Ty_fwd>
-_FwdIt2 _Inclusive_scan_per_chunk(
-    _FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op, _Ty& _Val, _Ty_fwd&& _Predecessor) {
+template <class _FwdIt1, class _FwdIt2, class _BinOp, class _Ty, class _Ty_fwd, class... _VectorTy>
+_FwdIt2 _Inclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op, _Ty& _Val,
+    _Ty_fwd&& _Predecessor, [[maybe_unused]] _VectorTy&... _Intermediate_result) {
     // local-sum for parallel inclusive_scan; writes local inclusive prefix sums into _Dest and stores overall sum in
     // _Val.
     // pre: _Val is *uninitialized* && _First != _Last
@@ -4505,24 +4574,30 @@ _FwdIt2 _Inclusive_scan_per_chunk(
             return _Dest;
         }
 
-        _Val = _Reduce_op(_STD move(_Val), *_First);
+        if constexpr (sizeof...(_VectorTy) == 0 || _Scan_reuse_output<_Ty, _FwdIt2>) {
+            _Val = _Reduce_op(_STD move(_Val), *_First);
+        } else {
+            _STL_INTERNAL_CHECK(((_Intermediate_result.size() < _Intermediate_result.capacity()) && ...));
+            _Val = _Reduce_op(_Intermediate_result.emplace_back(_STD move(_Val))..., *_First);
+        }
     }
 }
 
 template <class _Ty, class _Init_ty, class _FwdIt1, class _FwdIt2, class _BinOp>
-struct _Static_partitioned_inclusive_scan2 {
+struct _Static_partitioned_inclusive_scan3 {
     using _Diff = _Common_diff_t<_FwdIt1, _FwdIt2>;
     _Static_partition_team<_Diff> _Team;
     _Static_partition_range<_FwdIt1, _Diff> _Basis1;
     _Static_partition_range<_FwdIt2, _Diff> _Basis2;
     _Parallel_vector<_Scan_decoupled_lookback<_Ty>> _Lookback;
+    _Scan_intermediate_storage<_Ty, _FwdIt2> _Intermediate_result;
     _BinOp _Reduce_op;
     _Init_ty& _Initial;
 
-    _Static_partitioned_inclusive_scan2(
+    _Static_partitioned_inclusive_scan3(
         const size_t _Hw_threads, const _Diff _Count, _BinOp _Reduce_op_, _Init_ty& _Initial_)
         : _Team{_Count, _Get_chunked_work_chunk_count(_Hw_threads, _Count)}, _Basis1{}, _Basis2{},
-          _Lookback(_Team._Chunks), _Reduce_op(_Reduce_op_), _Initial(_Initial_) {}
+          _Lookback(_Team._Chunks), _Intermediate_result{_Team}, _Reduce_op(_Reduce_op_), _Initial(_Initial_) {}
 
     _Cancellation_status _Process_chunk() {
         const auto _Key = _Team._Get_next_key();
@@ -4531,13 +4606,13 @@ struct _Static_partitioned_inclusive_scan2 {
         }
 
         const auto _Chunk_number = _Key._Chunk_number;
-        const auto _In_range     = _Basis1._Get_chunk(_Key);
+        const auto _In_rng       = _Basis1._Get_chunk(_Key);
         const auto _Dest         = _Basis2._Get_first(_Chunk_number, _Team._Get_chunk_offset(_Chunk_number));
         // Run local inclusive_scan on this chunk
         const auto _Chunk = _Lookback.data() + static_cast<ptrdiff_t>(_Chunk_number);
         if (_Chunk_number == 0) { // chunk 0 is special as it has no predecessor; its local and total sums are the same
             _STD _Inclusive_scan_per_chunk(
-                _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _STD move(_Initial));
+                _In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _STD move(_Initial));
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
@@ -4546,30 +4621,35 @@ struct _Static_partitioned_inclusive_scan2 {
         if (_Prev_chunk->_State.load() & _Sum_available) {
             // if predecessor sum already complete, we can incorporate its value directly for 1 pass
             _STD _Inclusive_scan_per_chunk(
-                _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
+                _In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
 
         // Calculate local sum and publish to other threads
-        const auto _Last = _STD _Inclusive_scan_per_chunk(
-            _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Chunk->_Local._Ref(), _No_init_tag{});
+        const auto _Last = _STD _Inclusive_scan_per_chunk(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op,
+            _Chunk->_Local._Ref(), _No_init_tag{}, _Intermediate_result[_Chunk_number]);
         _Chunk->_Store_available_state(_Local_available);
 
         // Apply the predecessor overall sum to current overall sum and elements
         if (_Prev_chunk->_Get_available_state() & _Sum_available) { // predecessor overall sum done, use directly
-            _Chunk->_Apply_inclusive_predecessor(_Prev_chunk->_Sum._Ref(), _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_inclusive_predecessor(
+                _Prev_chunk->_Sum._Ref(), _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         } else {
             auto _Tmp = _STD _Get_lookback_sum(_Prev_chunk, _Reduce_op);
-            _Chunk->_Apply_inclusive_predecessor(_Tmp, _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_inclusive_predecessor(
+                _Tmp, _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         }
 
+        if constexpr (!_Scan_reuse_output<_Ty, _FwdIt2>) {
+            _Intermediate_result[_Chunk_number].clear();
+        }
         return _Cancellation_status::_Running;
     }
 
     static void __stdcall _Threadpool_callback(
         __std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
-        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_inclusive_scan2*>(_Context));
+        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_inclusive_scan3*>(_Context));
     }
 };
 
@@ -4591,7 +4671,7 @@ _FwdIt2 inclusive_scan(_ExPo&&, _FwdIt1 _First, _FwdIt1 _Last, _FwdIt2 _Dest, _B
             if (_Count >= 2) { // ... with at least 2 elements
                 _TRY_BEGIN
                 auto _Passed_op = _STD _Pass_fn(_Reduce_op);
-                _Static_partitioned_inclusive_scan2<_Ty, _Ty, _Unwrapped_t<const _FwdIt1&>, decltype(_UDest),
+                _Static_partitioned_inclusive_scan3<_Ty, _Ty, _Unwrapped_t<const _FwdIt1&>, decltype(_UDest),
                     decltype(_Passed_op)>
                     _Operation{_Hw_threads, _Count, _Passed_op, _Val};
                 _Operation._Basis1._Populate(_Operation._Team, _UFirst);
@@ -4637,7 +4717,7 @@ _FwdIt2 inclusive_scan(_ExPo&&, _FwdIt1 _First, _FwdIt1 _Last, _FwdIt2 _Dest, _B
                 _TRY_BEGIN
                 _No_init_tag _Tag;
                 auto _Passed_op = _STD _Pass_fn(_Reduce_op);
-                _Static_partitioned_inclusive_scan2<_Iter_value_t<_FwdIt1>, _No_init_tag, _Unwrapped_t<const _FwdIt1&>,
+                _Static_partitioned_inclusive_scan3<_Iter_value_t<_FwdIt1>, _No_init_tag, _Unwrapped_t<const _FwdIt1&>,
                     decltype(_UDest), decltype(_Passed_op)>
                     _Operation{_Hw_threads, _Count, _Passed_op, _Tag};
                 _Operation._Basis1._Populate(_Operation._Team, _UFirst);
@@ -4661,8 +4741,8 @@ _FwdIt2 inclusive_scan(_ExPo&&, _FwdIt1 _First, _FwdIt1 _Last, _FwdIt2 _Dest, _B
 }
 
 template <class _FwdIt1, class _FwdIt2, class _BinOp, class _UnaryOp, class _Ty>
-_FwdIt2 _Transform_exclusive_scan_per_chunk(
-    _FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op, _UnaryOp _Transform_op, _Ty& _Val) {
+_FwdIt2 _Transform_exclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op,
+    _UnaryOp _Transform_op, _Ty& _Val, _Parallel_vector<_Ty>& _Intermediate_result) {
     // Local-sum for parallel transform_exclusive_scan; writes local sums into [_Dest + 1, _Dest + (_Last - _First)) and
     // stores successor sum in _Val.
     // pre: _Val is *uninitialized* && _First != _Last
@@ -4675,8 +4755,13 @@ _FwdIt2 _Transform_exclusive_scan_per_chunk(
         }
 
         _Ty _Tmp = _Reduce_op(_Val, _Transform_op(*_First)); // temp to enable _First == _Dest
-        *_Dest   = _Val;
-        _Val     = _STD move(_Tmp);
+        if constexpr (_Scan_reuse_output<_Ty, _FwdIt2>) {
+            *_Dest = _Val;
+        } else {
+            _STL_INTERNAL_CHECK(_Intermediate_result.size() < _Intermediate_result.capacity());
+            *_Dest = _Intermediate_result.emplace_back(_STD move(_Val));
+        }
+        _Val = _STD move(_Tmp);
     }
 }
 
@@ -4698,20 +4783,22 @@ void _Transform_exclusive_scan_per_chunk_complete(_FwdIt1 _First, const _FwdIt1 
 }
 
 template <class _FwdIt1, class _FwdIt2, class _Ty, class _BinOp, class _UnaryOp>
-struct _Static_partitioned_transform_exclusive_scan2 {
+struct _Static_partitioned_transform_exclusive_scan3 {
     using _Diff = _Common_diff_t<_FwdIt1, _FwdIt2>;
     _Static_partition_team<_Diff> _Team;
     _Static_partition_range<_FwdIt1, _Diff> _Basis1;
     _Static_partition_range<_FwdIt2, _Diff> _Basis2;
     _Parallel_vector<_Scan_decoupled_lookback<_Ty>> _Lookback;
+    _Scan_intermediate_storage<_Ty, _FwdIt2> _Intermediate_result;
     _Ty& _Initial;
     _BinOp _Reduce_op;
     _UnaryOp _Transform_op;
 
-    _Static_partitioned_transform_exclusive_scan2(const size_t _Hw_threads, const _Diff _Count, const _FwdIt1 _First,
+    _Static_partitioned_transform_exclusive_scan3(const size_t _Hw_threads, const _Diff _Count, const _FwdIt1 _First,
         _Ty& _Initial_, _BinOp _Reduce_op_, _UnaryOp _Transform_op_, const _FwdIt2&)
         : _Team{_Count, _Get_chunked_work_chunk_count(_Hw_threads, _Count)}, _Basis1{}, _Basis2{},
-          _Lookback(_Team._Chunks), _Initial(_Initial_), _Reduce_op(_Reduce_op_), _Transform_op(_Transform_op_) {
+          _Lookback(_Team._Chunks), _Intermediate_result{_Team}, _Initial(_Initial_), _Reduce_op(_Reduce_op_),
+          _Transform_op(_Transform_op_) {
         _Basis1._Populate(_Team, _First);
     }
 
@@ -4722,13 +4809,13 @@ struct _Static_partitioned_transform_exclusive_scan2 {
         }
 
         const auto _Chunk_number = _Key._Chunk_number;
-        const auto _In_range     = _Basis1._Get_chunk(_Key);
+        const auto _In_rng       = _Basis1._Get_chunk(_Key);
         const auto _Dest         = _Basis2._Get_first(_Chunk_number, _Team._Get_chunk_offset(_Chunk_number));
         // Run local transform_exclusive_scan on this chunk
         const auto _Chunk = _Lookback.data() + static_cast<ptrdiff_t>(_Chunk_number);
         if (_Chunk_number == 0) { // chunk 0 is special as it has no predecessor; its local and total sums are the same
             _STD _Transform_exclusive_scan_per_chunk_complete(
-                _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Transform_op, _Chunk->_Sum._Ref(), _Initial);
+                _In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Transform_op, _Chunk->_Sum._Ref(), _Initial);
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
@@ -4736,31 +4823,36 @@ struct _Static_partitioned_transform_exclusive_scan2 {
         const auto _Prev_chunk = _STD _Prev_iter(_Chunk);
         if (_Prev_chunk->_State.load() & _Sum_available) {
             // if predecessor sum already complete, we can incorporate its value directly for 1 pass
-            _STD _Transform_exclusive_scan_per_chunk_complete(_In_range._First, _In_range._Last, _Dest, _Reduce_op,
+            _STD _Transform_exclusive_scan_per_chunk_complete(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op,
                 _Transform_op, _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
 
         // Calculate local sum and publish to other threads
-        const auto _Last = _STD _Transform_exclusive_scan_per_chunk(
-            _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Transform_op, _Chunk->_Local._Ref());
+        const auto _Last = _STD _Transform_exclusive_scan_per_chunk(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op,
+            _Transform_op, _Chunk->_Local._Ref(), _Intermediate_result[_Chunk_number]);
         _Chunk->_Store_available_state(_Local_available);
 
         // Apply the predecessor overall sum to current overall sum and elements
         if (_Prev_chunk->_Get_available_state() & _Sum_available) { // predecessor overall sum done, use directly
-            _Chunk->_Apply_exclusive_predecessor(_Prev_chunk->_Sum._Ref(), _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_exclusive_predecessor(
+                _Prev_chunk->_Sum._Ref(), _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         } else {
             auto _Tmp = _STD _Get_lookback_sum(_Prev_chunk, _Reduce_op);
-            _Chunk->_Apply_exclusive_predecessor(_Tmp, _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_exclusive_predecessor(
+                _Tmp, _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         }
 
+        if constexpr (!_Scan_reuse_output<_Ty, _FwdIt2>) {
+            _Intermediate_result[_Chunk_number].clear();
+        }
         return _Cancellation_status::_Running;
     }
 
     static void __stdcall _Threadpool_callback(
         __std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
-        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_transform_exclusive_scan2*>(_Context));
+        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_transform_exclusive_scan3*>(_Context));
     }
 };
 
@@ -4781,7 +4873,7 @@ _FwdIt2 transform_exclusive_scan(_ExPo&&, const _FwdIt1 _First, const _FwdIt1 _L
             const auto _UDest = _STD _Get_unwrapped_n(_Dest, _Count);
             if (_Count >= 2) { // ... with at least 2 elements
                 _TRY_BEGIN
-                _Static_partitioned_transform_exclusive_scan2 _Operation{_Hw_threads, _Count, _UFirst, _Val,
+                _Static_partitioned_transform_exclusive_scan3 _Operation{_Hw_threads, _Count, _UFirst, _Val,
                     _STD _Pass_fn(_Reduce_op), _STD _Pass_fn(_Transform_op), _UDest};
                 _STD _Seek_wrapped(_Dest, _Operation._Basis2._Populate(_Operation._Team, _UDest));
                 // Note that _Val is used as temporary storage by whichever thread runs the first chunk.
@@ -4806,9 +4898,9 @@ _FwdIt2 transform_exclusive_scan(_ExPo&&, const _FwdIt1 _First, const _FwdIt1 _L
     return _Dest;
 }
 
-template <class _FwdIt1, class _FwdIt2, class _BinOp, class _UnaryOp, class _Ty, class _Ty_fwd>
+template <class _FwdIt1, class _FwdIt2, class _BinOp, class _UnaryOp, class _Ty, class _Ty_fwd, class... _VectorTy>
 _FwdIt2 _Transform_inclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last, _FwdIt2 _Dest, _BinOp _Reduce_op,
-    _UnaryOp _Transform_op, _Ty& _Val, _Ty_fwd&& _Predecessor) {
+    _UnaryOp _Transform_op, _Ty& _Val, _Ty_fwd&& _Predecessor, [[maybe_unused]] _VectorTy&... _Intermediate_result) {
     // local-sum for parallel transform_inclusive_scan; writes local inclusive prefix sums into _Dest and stores overall
     // sum in _Val
     // pre: _Val is *uninitialized* && _First != _Last
@@ -4827,25 +4919,32 @@ _FwdIt2 _Transform_inclusive_scan_per_chunk(_FwdIt1 _First, const _FwdIt1 _Last,
             return _Dest;
         }
 
-        _Val = _Reduce_op(_STD move(_Val), _Transform_op(*_First));
+        if constexpr (sizeof...(_VectorTy) == 0 || _Scan_reuse_output<_Ty, _FwdIt2>) {
+            _Val = _Reduce_op(_STD move(_Val), _Transform_op(*_First));
+        } else {
+            _STL_INTERNAL_CHECK(((_Intermediate_result.size() < _Intermediate_result.capacity()) && ...));
+            _Val = _Reduce_op(_Intermediate_result.emplace_back(_STD move(_Val))..., _Transform_op(*_First));
+        }
     }
 }
 
 template <class _Ty, class _Init_ty, class _FwdIt1, class _FwdIt2, class _BinOp, class _UnaryOp>
-struct _Static_partitioned_transform_inclusive_scan2 {
+struct _Static_partitioned_transform_inclusive_scan3 {
     using _Diff = _Common_diff_t<_FwdIt1, _FwdIt2>;
     _Static_partition_team<_Diff> _Team;
     _Static_partition_range<_FwdIt1, _Diff> _Basis1;
     _Static_partition_range<_FwdIt2, _Diff> _Basis2;
     _Parallel_vector<_Scan_decoupled_lookback<_Ty>> _Lookback;
+    _Scan_intermediate_storage<_Ty, _FwdIt2> _Intermediate_result;
     _BinOp _Reduce_op;
     _UnaryOp _Transform_op;
     _Init_ty& _Initial;
 
-    _Static_partitioned_transform_inclusive_scan2(
+    _Static_partitioned_transform_inclusive_scan3(
         const size_t _Hw_threads, const _Diff _Count, _BinOp _Reduce_op_, _UnaryOp _Transform_op_, _Init_ty& _Initial_)
         : _Team{_Count, _Get_chunked_work_chunk_count(_Hw_threads, _Count)}, _Basis1{}, _Basis2{},
-          _Lookback(_Team._Chunks), _Reduce_op(_Reduce_op_), _Transform_op(_Transform_op_), _Initial(_Initial_) {}
+          _Lookback(_Team._Chunks), _Intermediate_result{_Team}, _Reduce_op(_Reduce_op_), _Transform_op(_Transform_op_),
+          _Initial(_Initial_) {}
 
     _Cancellation_status _Process_chunk() {
         const auto _Key = _Team._Get_next_key();
@@ -4854,13 +4953,13 @@ struct _Static_partitioned_transform_inclusive_scan2 {
         }
 
         const auto _Chunk_number = _Key._Chunk_number;
-        const auto _In_range     = _Basis1._Get_chunk(_Key);
+        const auto _In_rng       = _Basis1._Get_chunk(_Key);
         const auto _Dest         = _Basis2._Get_first(_Chunk_number, _Team._Get_chunk_offset(_Chunk_number));
         // Run local transform_inclusive_scan on this chunk
         const auto _Chunk = _Lookback.data() + static_cast<ptrdiff_t>(_Chunk_number);
         if (_Chunk_number == 0) { // chunk 0 is special as it has no predecessor; its local and total sums are the same
-            _STD _Transform_inclusive_scan_per_chunk(_In_range._First, _In_range._Last, _Dest, _Reduce_op,
-                _Transform_op, _Chunk->_Sum._Ref(), _STD move(_Initial));
+            _STD _Transform_inclusive_scan_per_chunk(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Transform_op,
+                _Chunk->_Sum._Ref(), _STD move(_Initial));
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
@@ -4868,31 +4967,36 @@ struct _Static_partitioned_transform_inclusive_scan2 {
         const auto _Prev_chunk = _STD _Prev_iter(_Chunk);
         if (_Prev_chunk->_State.load() & _Sum_available) {
             // if predecessor sum already complete, we can incorporate its value directly for 1 pass
-            _STD _Transform_inclusive_scan_per_chunk(_In_range._First, _In_range._Last, _Dest, _Reduce_op,
-                _Transform_op, _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
+            _STD _Transform_inclusive_scan_per_chunk(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op, _Transform_op,
+                _Chunk->_Sum._Ref(), _Prev_chunk->_Sum._Ref());
             _Chunk->_Store_available_state(_Sum_available);
             return _Cancellation_status::_Running;
         }
 
         // Calculate local sum and publish to other threads
-        const auto _Last = _STD _Transform_inclusive_scan_per_chunk(
-            _In_range._First, _In_range._Last, _Dest, _Reduce_op, _Transform_op, _Chunk->_Local._Ref(), _No_init_tag{});
+        const auto _Last = _STD _Transform_inclusive_scan_per_chunk(_In_rng._First, _In_rng._Last, _Dest, _Reduce_op,
+            _Transform_op, _Chunk->_Local._Ref(), _No_init_tag{}, _Intermediate_result[_Chunk_number]);
         _Chunk->_Store_available_state(_Local_available);
 
         // Apply the predecessor overall sum to current overall sum and elements
         if (_Prev_chunk->_Get_available_state() & _Sum_available) { // predecessor overall sum done, use directly
-            _Chunk->_Apply_inclusive_predecessor(_Prev_chunk->_Sum._Ref(), _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_inclusive_predecessor(
+                _Prev_chunk->_Sum._Ref(), _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         } else {
             auto _Tmp = _STD _Get_lookback_sum(_Prev_chunk, _Reduce_op);
-            _Chunk->_Apply_inclusive_predecessor(_Tmp, _Dest, _Last, _Reduce_op);
+            _Chunk->_Apply_inclusive_predecessor(
+                _Tmp, _Dest, _Intermediate_result[_Chunk_number].data(), _Last, _Reduce_op);
         }
 
+        if constexpr (!_Scan_reuse_output<_Ty, _FwdIt2>) {
+            _Intermediate_result[_Chunk_number].clear();
+        }
         return _Cancellation_status::_Running;
     }
 
     static void __stdcall _Threadpool_callback(
         __std_PTP_CALLBACK_INSTANCE, void* const _Context, __std_PTP_WORK) noexcept /* terminates */ {
-        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_transform_inclusive_scan2*>(_Context));
+        _STD _Run_available_chunked_work(*static_cast<_Static_partitioned_transform_inclusive_scan3*>(_Context));
     }
 };
 
@@ -4915,7 +5019,7 @@ _FwdIt2 transform_inclusive_scan(_ExPo&&, const _FwdIt1 _First, const _FwdIt1 _L
                 _TRY_BEGIN
                 auto _Passed_reduce    = _STD _Pass_fn(_Reduce_op);
                 auto _Passed_transform = _STD _Pass_fn(_Transform_op);
-                _Static_partitioned_transform_inclusive_scan2<_Ty, _Ty, _Unwrapped_t<const _FwdIt1&>, decltype(_UDest),
+                _Static_partitioned_transform_inclusive_scan3<_Ty, _Ty, _Unwrapped_t<const _FwdIt1&>, decltype(_UDest),
                     decltype(_Passed_reduce), decltype(_Passed_transform)>
                     _Operation{_Hw_threads, _Count, _Passed_reduce, _Passed_transform, _Val};
                 _Operation._Basis1._Populate(_Operation._Team, _UFirst);
@@ -4963,7 +5067,7 @@ _FwdIt2 transform_inclusive_scan(_ExPo&&, const _FwdIt1 _First, const _FwdIt1 _L
                 auto _Passed_reduce    = _STD _Pass_fn(_Reduce_op);
                 auto _Passed_transform = _STD _Pass_fn(_Transform_op);
                 using _Intermediate_t  = decay_t<decltype(_Transform_op(*_UFirst))>;
-                _Static_partitioned_transform_inclusive_scan2<_Intermediate_t, _No_init_tag,
+                _Static_partitioned_transform_inclusive_scan3<_Intermediate_t, _No_init_tag,
                     _Unwrapped_t<const _FwdIt1&>, decltype(_UDest), decltype(_Passed_reduce),
                     decltype(_Passed_transform)>
                     _Operation{_Hw_threads, _Count, _Passed_reduce, _Passed_transform, _Tag};
@@ -5010,15 +5114,15 @@ struct _Static_partitioned_adjacent_difference2 {
         }
 
         const auto _Chunk_number = _Key._Chunk_number;
-        auto _In_range           = _Basis1._Get_chunk(_Key);
+        auto _In_rng             = _Basis1._Get_chunk(_Key);
         auto _Dest               = _Basis2._Get_first(_Chunk_number, _Team._Get_chunk_offset(_Chunk_number));
-        auto _Next               = _In_range._First;
+        auto _Next               = _In_rng._First;
         do {
             ++_Next; // note: steps 1 element into the following chunk
-            *_Dest = _Diff_op(*_Next, *_In_range._First);
+            *_Dest = _Diff_op(*_Next, *_In_rng._First);
             ++_Dest;
-            _In_range._First = _Next;
-        } while (_In_range._First != _In_range._Last);
+            _In_rng._First = _Next;
+        } while (_In_rng._First != _In_rng._Last);
 
         return _Cancellation_status::_Running;
     }

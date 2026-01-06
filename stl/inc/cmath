@@ -11,8 +11,7 @@
 #include <cstdlib>
 #include <xtr1common>
 
-#if !defined(__clang__) && !defined(__CUDACC__) && !defined(__INTEL_COMPILER) \
-    && !defined(_M_CEE) // TRANSITION, VSO-1663104
+#if !defined(__clang__) && !defined(__CUDACC__) && !defined(_M_CEE) // TRANSITION, VSO-1663104
 #define _HAS_CMATH_INTRINSICS 1
 #else // ^^^ intrinsics available / intrinsics unavailable vvv
 #define _HAS_CMATH_INTRINSICS 0
@@ -568,6 +567,17 @@ double frexp(_Ty _Value, _Out_ int* const _Exp) noexcept /* strengthened */ {
     return _CSTD frexp(static_cast<double>(_Value), _Exp);
 }
 
+template <class _Ty1, class _Ty2, _STD enable_if_t<_STD is_arithmetic_v<_Ty1> && _STD is_arithmetic_v<_Ty2>, int> = 0>
+_NODISCARD _STD _Common_float_type_t<_Ty1, _Ty2> pow(_Ty1 _Left, _Ty2 _Right) noexcept /* strengthened */ {
+    if constexpr (_STD _Is_nonbool_integral<_Ty2>) {
+        if (_Right == 2) {
+            return static_cast<double>(_Left) * static_cast<double>(_Left); // TRANSITION, see GH-5768
+        }
+    }
+
+    return _CSTD pow(static_cast<double>(_Left), static_cast<double>(_Right));
+}
+
 template <class _Ty1, class _Ty2, class _Ty3,
     _STD enable_if_t<_STD is_arithmetic_v<_Ty1> && _STD is_arithmetic_v<_Ty2> && _STD is_arithmetic_v<_Ty3>, int> = 0>
 _NODISCARD _STD _Common_float_type_t<_Ty1, _STD _Common_float_type_t<_Ty2, _Ty3>> fma(
@@ -605,33 +615,33 @@ _STD _Common_float_type_t<_Ty1, _Ty2> remquo(_Ty1 _Left, _Ty2 _Right, int* _Pquo
         return __builtin_##NAME(_Xx);                                                            \
     }
 
-// Updated by P0533R9 "constexpr For <cmath> And <cstdlib>", but the builtins aren't constexpr as of Clang 18.
-#define _CLANG_BUILTIN2_ARG(NAME, ARG)                                                                   \
-    _NODISCARD _Check_return_ inline bool NAME(_In_ ARG _Xx, _In_ ARG _Yx) noexcept /* strengthened */ { \
-        return __builtin_##NAME(_Xx, _Yx);                                                               \
+// Updated by P0533R9 "constexpr For <cmath> And <cstdlib>".
+#define _CLANG_BUILTIN2_ARG(NAME, ARG)                                                                      \
+    _NODISCARD _Check_return_ constexpr bool NAME(_In_ ARG _Xx, _In_ ARG _Yx) noexcept /* strengthened */ { \
+        return __builtin_##NAME(_Xx, _Yx);                                                                  \
     }
 
-#define _CLANG_BUILTIN2_ARG_TEMPLATED(NAME, ARG)                                                         \
-    template <class _Ty, _STD enable_if_t<_STD is_arithmetic_v<_Ty>, int> = 0>                           \
-    _NODISCARD _Check_return_ inline bool NAME(_In_ ARG _Xx, _In_ _Ty _Yx) noexcept /* strengthened */ { \
-        return __builtin_##NAME(static_cast<double>(_Xx), static_cast<double>(_Yx));                     \
+#define _CLANG_BUILTIN2_ARG_TEMPLATED(NAME, ARG)                                                            \
+    template <class _Ty, _STD enable_if_t<_STD is_arithmetic_v<_Ty>, int> = 0>                              \
+    _NODISCARD _Check_return_ constexpr bool NAME(_In_ ARG _Xx, _In_ _Ty _Yx) noexcept /* strengthened */ { \
+        return __builtin_##NAME(static_cast<double>(_Xx), static_cast<double>(_Yx));                        \
     }
 
 #ifdef __cpp_char8_t
-#define _CLANG_BUILTIN2_ARG_TEMPLATED_CHAR8_T(NAME)                                                          \
-    template <class _Ty, _STD enable_if_t<_STD is_arithmetic_v<_Ty>, int> = 0>                               \
-    _NODISCARD _Check_return_ inline bool NAME(_In_ char8_t _Xx, _In_ _Ty _Yx) noexcept /* strengthened */ { \
-        return __builtin_##NAME(static_cast<double>(_Xx), static_cast<double>(_Yx));                         \
+#define _CLANG_BUILTIN2_ARG_TEMPLATED_CHAR8_T(NAME)                                                             \
+    template <class _Ty, _STD enable_if_t<_STD is_arithmetic_v<_Ty>, int> = 0>                                  \
+    _NODISCARD _Check_return_ constexpr bool NAME(_In_ char8_t _Xx, _In_ _Ty _Yx) noexcept /* strengthened */ { \
+        return __builtin_##NAME(static_cast<double>(_Xx), static_cast<double>(_Yx));                            \
     }
 #else // ^^^ defined(__cpp_char8_t) / !defined(__cpp_char8_t) vvv
 #define _CLANG_BUILTIN2_ARG_TEMPLATED_CHAR8_T(NAME)
 #endif // ^^^ !defined(__cpp_char8_t) ^^^
 
 #ifdef _NATIVE_WCHAR_T_DEFINED
-#define _CLANG_BUILTIN2_ARG_TEMPLATED_WCHAR_T(NAME)                                                          \
-    template <class _Ty, _STD enable_if_t<_STD is_arithmetic_v<_Ty>, int> = 0>                               \
-    _NODISCARD _Check_return_ inline bool NAME(_In_ wchar_t _Xx, _In_ _Ty _Yx) noexcept /* strengthened */ { \
-        return __builtin_##NAME(static_cast<double>(_Xx), static_cast<double>(_Yx));                         \
+#define _CLANG_BUILTIN2_ARG_TEMPLATED_WCHAR_T(NAME)                                                             \
+    template <class _Ty, _STD enable_if_t<_STD is_arithmetic_v<_Ty>, int> = 0>                                  \
+    _NODISCARD _Check_return_ constexpr bool NAME(_In_ wchar_t _Xx, _In_ _Ty _Yx) noexcept /* strengthened */ { \
+        return __builtin_##NAME(static_cast<double>(_Xx), static_cast<double>(_Yx));                            \
     }
 #else // ^^^ defined(_NATIVE_WCHAR_T_DEFINED) / !defined(_NATIVE_WCHAR_T_DEFINED) vvv
 #define _CLANG_BUILTIN2_ARG_TEMPLATED_WCHAR_T(NAME)
@@ -668,9 +678,11 @@ _STD _Common_float_type_t<_Ty1, _Ty2> remquo(_Ty1 _Left, _Ty2 _Right, int* _Pquo
     _CLANG_BUILTIN2_ARG(NAME, double) \
     _CLANG_BUILTIN2_ARG(NAME, long double)
 
+_STL_DISABLE_CLANG_WARNING_NAN_INF_DISABLED
 _CLANG_BUILTIN1(isfinite)
 _CLANG_BUILTIN1(isinf)
 _CLANG_BUILTIN1(isnan)
+_STL_RESTORE_CLANG_WARNING_NAN_INF_DISABLED
 _CLANG_BUILTIN1(isnormal)
 
 _CLANG_BUILTIN2(isgreater)
@@ -678,14 +690,18 @@ _CLANG_BUILTIN2(isgreaterequal)
 _CLANG_BUILTIN2(isless)
 _CLANG_BUILTIN2(islessequal)
 _CLANG_BUILTIN2(islessgreater)
+_STL_DISABLE_CLANG_WARNING_NAN_INF_DISABLED
 _CLANG_BUILTIN2(isunordered)
+_STL_RESTORE_CLANG_WARNING_NAN_INF_DISABLED
 
 _CLANG_BUILTIN2_TEMPLATED(isgreater)
 _CLANG_BUILTIN2_TEMPLATED(isgreaterequal)
 _CLANG_BUILTIN2_TEMPLATED(isless)
 _CLANG_BUILTIN2_TEMPLATED(islessequal)
 _CLANG_BUILTIN2_TEMPLATED(islessgreater)
+_STL_DISABLE_CLANG_WARNING_NAN_INF_DISABLED
 _CLANG_BUILTIN2_TEMPLATED(isunordered)
+_STL_RESTORE_CLANG_WARNING_NAN_INF_DISABLED
 
 #undef _CLANG_BUILTIN1_ARG
 #undef _CLANG_BUILTIN2_ARG
@@ -856,7 +872,7 @@ _GENERIC_MATH1(cbrt)
 _GENERIC_MATH1(fabs)
 _GENERIC_MATH2(hypot)
 // 3-arg hypot() is hand-crafted
-_GENERIC_MATH2(pow)
+// pow() is hand-crafted
 _GENERIC_MATH1(sqrt)
 _GENERIC_MATH1(erf)
 _GENERIC_MATH1(erfc)
@@ -1409,14 +1425,12 @@ _EXPORT_STD _NODISCARD inline long double sph_bessell(const unsigned int _Arg1, 
 }
 
 _EXPORT_STD _NODISCARD inline double sph_legendre(
-    const unsigned int _Arg1, const unsigned int _Arg2, const double _Theta) noexcept
-/* strengthened */ {
+    const unsigned int _Arg1, const unsigned int _Arg2, const double _Theta) noexcept /* strengthened */ {
     return __std_smf_sph_legendre(_Arg1, _Arg2, _Theta);
 }
 
 _EXPORT_STD _NODISCARD inline float sph_legendref(
-    const unsigned int _Arg1, const unsigned int _Arg2, const float _Theta) noexcept
-/* strengthened */ {
+    const unsigned int _Arg1, const unsigned int _Arg2, const float _Theta) noexcept /* strengthened */ {
     return __std_smf_sph_legendref(_Arg1, _Arg2, _Theta);
 }
 

@@ -12,17 +12,15 @@
 
 _EXTERN_C_UNLESS_PURE
 
-constexpr int _Base_max = 36; // largest valid base
-
-// static data
-static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz"; // valid digits
-
-// 32-bits!
-static const char ndigs[_Base_max + 1] = {0, 0, 33, 21, 17, 14, 13, 12, 11, 11, 10, 10, 9, 9, 9, 9, 9, 8, 8, 8, 8, 8, 8,
-    8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7};
-
 _CRTIMP2_PURE unsigned long __CLRCALL_PURE_OR_CDECL _Stoulx(
-    const char* s, char** endptr, int base, int* perr) noexcept { // convert string to unsigned long, with checking
+    const char* s, char** endptr, int base, int* perr) noexcept {
+    // convert string to unsigned long, with checking
+
+    constexpr int _Base_max                    = 36; // largest valid base
+    static constexpr char digits[]             = "0123456789abcdefghijklmnopqrstuvwxyz"; // valid digits
+    static constexpr char ndigs[_Base_max + 1] = {0, 0, 33, 21, 17, 14, 13, 12, 11, 11, 10, 10, 9, 9, 9, 9, 9, 8, 8, 8,
+        8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7}; // 32-bits!
+
     const char* sc;
     const char* sd;
     const char* s1;
@@ -71,7 +69,7 @@ _CRTIMP2_PURE unsigned long __CLRCALL_PURE_OR_CDECL _Stoulx(
 
     x = 0;
     for (s2 = sc, y = 0; (sd = static_cast<const char*>(memchr(&digits[0], tolower(*sc), base))) != nullptr;
-         ++sc) { // accumulate digits
+        ++sc) { // accumulate digits
         y   = x;
         dig = static_cast<char>(sd - digits); // for overflow checking
         x   = x * base + dig;

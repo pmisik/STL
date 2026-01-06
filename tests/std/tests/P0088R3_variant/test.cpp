@@ -38,7 +38,7 @@
 
 #include <is_permissive.hpp>
 
-// clang-format off
+// clang-format off: avoid diverging from external code
 // LLVM SOURCES BEGIN
 // -- BEGIN: test/std/utilities/variant/variant.bad_variant_access/bad_variant_access.pass.cpp
 //===----------------------------------------------------------------------===//
@@ -285,7 +285,7 @@ void test_const_lvalue_get() {
   {
     using V = std::variant<int, const long>;
     constexpr V v(42);
-    static_assert(noexcept(std::get<0>(v)) == is_permissive);
+    ASSERT_NOT_NOEXCEPT(std::get<0>(v));
     ASSERT_SAME_TYPE(decltype(std::get<0>(v)), const int &);
     static_assert(std::get<0>(v) == 42, "");
   }
@@ -299,7 +299,7 @@ void test_const_lvalue_get() {
   {
     using V = std::variant<int, const long>;
     constexpr V v(42l);
-    static_assert(noexcept(std::get<1>(v)) == is_permissive);
+    ASSERT_NOT_NOEXCEPT(std::get<1>(v));
     ASSERT_SAME_TYPE(decltype(std::get<1>(v)), const long &);
     static_assert(std::get<1>(v) == 42, "");
   }
@@ -447,7 +447,7 @@ void test_const_lvalue_get() {
   {
     using V = std::variant<int, const long>;
     constexpr V v(42);
-    static_assert(noexcept(std::get<int>(v)) == is_permissive);
+    ASSERT_NOT_NOEXCEPT(std::get<int>(v));
     ASSERT_SAME_TYPE(decltype(std::get<int>(v)), const int &);
     static_assert(std::get<int>(v) == 42, "");
   }
@@ -461,7 +461,7 @@ void test_const_lvalue_get() {
   {
     using V = std::variant<int, const long>;
     constexpr V v(42l);
-    static_assert(noexcept(std::get<const long>(v)) == is_permissive);
+    ASSERT_NOT_NOEXCEPT(std::get<const long>(v));
     ASSERT_SAME_TYPE(decltype(std::get<const long>(v)), const long &);
     static_assert(std::get<const long>(v) == 42, "");
   }
@@ -760,7 +760,7 @@ void test_hash_monostate() {
     static_assert(std::is_copy_constructible<H>::value, "");
   }
   {
-    test_hash_enabled_for_type<std::monostate>();
+    test_hash_enabled<std::monostate>();
   }
 }
 
@@ -794,20 +794,16 @@ struct hash<::hash::B> {
 namespace hash {
 void test_hash_variant_enabled() {
   {
-#ifndef __EDG__ // TRANSITION, DevCom-10107834
-    test_hash_enabled_for_type<std::variant<int> >();
-    test_hash_enabled_for_type<std::variant<int*, long, double, const int> >();
-#endif // ^^^ no workaround ^^^
+    test_hash_enabled<std::variant<int> >();
+    test_hash_enabled<std::variant<int*, long, double, const int> >();
   }
   {
-    test_hash_disabled_for_type<std::variant<int, A>>();
-    test_hash_disabled_for_type<std::variant<const A, void*>>();
+    test_hash_disabled<std::variant<int, A>>();
+    test_hash_disabled<std::variant<const A, void*>>();
   }
   {
-#ifndef __EDG__ // TRANSITION, DevCom-10107834
-    test_hash_enabled_for_type<std::variant<int, B>>();
-    test_hash_enabled_for_type<std::variant<const B, int>>();
-#endif // ^^^ no workaround ^^^
+    test_hash_enabled<std::variant<int, B>>();
+    test_hash_enabled<std::variant<const B, int>>();
   }
 }
 

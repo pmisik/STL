@@ -56,7 +56,7 @@ constexpr void test_one(Base&& base, Delimiter&& delimiter, Expected&& expected)
     static_assert(CanViewLazySplit<Base&, Delimiter&> == (!is_view || copy_constructible<remove_cvref_t<Base>>) );
     if constexpr (CanViewLazySplit<Base&, Delimiter&>) { // Validate lvalue
         constexpr bool is_noexcept =
-            (!is_view || is_nothrow_copy_constructible_v<views::all_t<Base&>>) &&is_nothrow_copy_constructible_v<DV>;
+            (!is_view || is_nothrow_copy_constructible_v<views::all_t<Base&>>) && is_nothrow_copy_constructible_v<DV>;
 
         static_assert(same_as<decltype(views::lazy_split(base, delimiter)), R>);
         static_assert(noexcept(views::lazy_split(base, delimiter)) == is_noexcept);
@@ -357,6 +357,14 @@ constexpr bool test_lwg_3904() {
     ++i;
     decltype(as_const(r).begin()) j = i;
     return j != r.end();
+}
+
+void test_lwg_4027() { // COMPILE-ONLY
+    auto r   = views::single(0) | views::lazy_split(0);
+    using R1 = decltype((*ranges::cbegin(r)).front());
+    using R2 = decltype((*cbegin(r)).front());
+    static_assert(same_as<R1, R2>);
+    static_assert(is_const_v<remove_reference_t<R1>>);
 }
 
 int main() {

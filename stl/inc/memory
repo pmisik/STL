@@ -92,24 +92,33 @@ namespace ranges {
             _STL_INTERNAL_STATIC_ASSERT(_No_throw_sentinel_for<_OSe, _Out>);
             _STL_INTERNAL_STATIC_ASSERT(constructible_from<iter_value_t<_Out>, iter_reference_t<_It>>);
 
-            constexpr bool _Is_sized1 = sized_sentinel_for<_Se, _It>;
-            constexpr bool _Is_sized2 = sized_sentinel_for<_OSe, _Out>;
-            if constexpr (_Iter_copy_cat<_It, _Out>::_Bitcopy_constructible
-                          && _Sized_or_unreachable_sentinel_for<_Se, _It>
-                          && _Sized_or_unreachable_sentinel_for<_OSe, _Out>) {
+            constexpr bool _Is_sized1  = sized_sentinel_for<_Se, _It>;
+            constexpr bool _Is_sized2  = sized_sentinel_for<_OSe, _Out>;
+            constexpr bool _Can_memcpy = _Iter_copy_cat<_It, _Out>::_Bitcopy_constructible
+                                      && _Sized_or_unreachable_sentinel_for<_Se, _It>
+                                      && _Sized_or_unreachable_sentinel_for<_OSe, _Out>;
+            if constexpr (_Can_memcpy && (_Is_sized1 || _Is_sized2)) {
                 if constexpr (_Is_sized1 && _Is_sized2) {
                     return _RANGES _Copy_memcpy_common(_IFirst, _RANGES next(_IFirst, _STD move(_ILast)), _OFirst,
                         _RANGES next(_OFirst, _STD move(_OLast)));
                 } else if constexpr (_Is_sized1) {
-                    return _RANGES _Copy_memcpy_distance(
-                        _IFirst, _OFirst, _IFirst, _RANGES next(_IFirst, _STD move(_ILast)));
-                } else if constexpr (_Is_sized2) {
-                    return _RANGES _Copy_memcpy_distance(
-                        _IFirst, _OFirst, _OFirst, _RANGES next(_OFirst, _STD move(_OLast)));
+                    const auto _Dist = _ILast - _IFirst;
+                    _STD _Contiguous_iter_verify(_OFirst, static_cast<iter_difference_t<_Out>>(_Dist));
+                    return _RANGES _Copy_memcpy_distance(_IFirst, _OFirst, _IFirst, _IFirst + _Dist);
                 } else {
-                    _STL_ASSERT(false, "Tried to uninitialized_copy two ranges with unreachable sentinels");
+                    _STL_INTERNAL_STATIC_ASSERT(_Is_sized2);
+                    const auto _Dist = _OLast - _OFirst;
+                    _STD _Contiguous_iter_verify(_IFirst, static_cast<iter_difference_t<_It>>(_Dist));
+                    return _RANGES _Copy_memcpy_distance(_IFirst, _OFirst, _OFirst, _OFirst + _Dist);
                 }
             } else {
+                if constexpr (_Can_memcpy) {
+                    // We were eligible for the memcpy optimization above, except for both sentinels being unreachable.
+                    // The following classic code is doomed, because no exceptions will end the infinite loop.
+                    // Following our usual pattern, let's emit a debug assertion, then run the loop anyways.
+                    _STL_ASSERT(false, "Tried to std::uninitialized_copy() two ranges with unreachable sentinels");
+                }
+
                 _Uninitialized_backout _Backout{_STD move(_OFirst)};
 
                 for (; _IFirst != _ILast && _Backout._Last != _OLast; ++_IFirst) {
@@ -141,7 +150,7 @@ _NoThrowFwdIt uninitialized_copy_n(const _InIt _First, const _Diff _Count_raw, _
         _Uninitialized_backout<decltype(_UDest)> _Backout{_UDest};
 
         for (; _Count > 0; --_Count, (void) ++_UFirst) {
-            _Backout._Emplace_back(*_UFirst);
+            _Backout._Emplace_back_deref(_UFirst);
         }
 
         _UDest = _Backout._Release();
@@ -171,8 +180,7 @@ namespace ranges {
     _EXPORT_STD template <class _In, class _Out>
     using uninitialized_copy_n_result = in_out_result<_In, _Out>;
 
-    class _Uninitialized_copy_n_fn {
-    public:
+    struct _Uninitialized_copy_n_fn {
         template <input_iterator _It, _No_throw_forward_iterator _Out, _No_throw_sentinel_for<_Out> _OSe>
             requires constructible_from<iter_value_t<_Out>, iter_reference_t<_It>>
         _STATIC_CALL_OPERATOR uninitialized_copy_n_result<_It, _Out> operator()(
@@ -193,6 +201,8 @@ namespace ranges {
                     _IFirst = _STD move(_UResult.in);
                     _OFirst = _STD move(_UResult.out);
                 } else {
+                    _STD _Contiguous_iter_verify(_IFirst, _Count);
+                    _STD _Contiguous_iter_verify(_OFirst, static_cast<iter_difference_t<_Out>>(_Count));
                     auto _UResult = _RANGES _Copy_memcpy_count(_IFirst, _OFirst, static_cast<size_t>(_Count));
                     _IFirst       = _STD move(_UResult.in);
                     _OFirst       = _STD move(_UResult.out);
@@ -242,8 +252,7 @@ _NoThrowFwdIt uninitialized_move(_ExPo&&, const _FwdIt _First, const _FwdIt _Las
 
 #if _HAS_CXX20
 namespace ranges {
-    class _Uninitialized_move_fn {
-    public:
+    struct _Uninitialized_move_fn {
         template <input_iterator _It, sentinel_for<_It> _Se, _No_throw_forward_iterator _Out,
             _No_throw_sentinel_for<_Out> _OSe>
             requires constructible_from<iter_value_t<_Out>, iter_rvalue_reference_t<_It>>
@@ -294,7 +303,7 @@ pair<_InIt, _NoThrowFwdIt> uninitialized_move_n(_InIt _First, const _Diff _Count
         _Uninitialized_backout<decltype(_UDest)> _Backout{_UDest};
 
         for (; _Count > 0; --_Count, (void) ++_UFirst) {
-            _Backout._Emplace_back(_STD move(*_UFirst));
+            _Backout._Emplace_back_deref_move(_UFirst);
         }
 
         _UDest = _Backout._Release();
@@ -334,8 +343,7 @@ namespace ranges {
     _EXPORT_STD template <class _In, class _Out>
     using uninitialized_move_n_result = in_out_result<_In, _Out>;
 
-    class _Uninitialized_move_n_fn {
-    public:
+    struct _Uninitialized_move_n_fn {
         template <input_iterator _It, _No_throw_forward_iterator _Out, _No_throw_sentinel_for<_Out> _OSe>
             requires constructible_from<iter_value_t<_Out>, iter_rvalue_reference_t<_It>>
         _STATIC_CALL_OPERATOR uninitialized_move_n_result<_It, _Out> operator()(
@@ -356,6 +364,8 @@ namespace ranges {
                     _IFirst = _STD move(_UResult.in);
                     _OFirst = _STD move(_UResult.out);
                 } else {
+                    _STD _Contiguous_iter_verify(_IFirst, _Count);
+                    _STD _Contiguous_iter_verify(_OFirst, static_cast<iter_difference_t<_Out>>(_Count));
                     auto _UResult = _RANGES _Copy_memcpy_count(_IFirst, _OFirst, static_cast<size_t>(_Count));
                     _IFirst       = _STD move(_UResult.in);
                     _OFirst       = _STD move(_UResult.out);
@@ -485,8 +495,7 @@ _NoThrowFwdIt uninitialized_fill_n(
 
 #if _HAS_CXX20
 namespace ranges {
-    class _Uninitialized_fill_n_fn {
-    public:
+    struct _Uninitialized_fill_n_fn {
         template <_No_throw_forward_iterator _It, class _Ty>
             requires constructible_from<iter_value_t<_It>, const _Ty&>
         _STATIC_CALL_OPERATOR _It operator()(
@@ -522,17 +531,14 @@ namespace ranges {
 
     _EXPORT_STD inline constexpr _Uninitialized_fill_n_fn uninitialized_fill_n;
 
-    class _Construct_at_fn {
-    public:
+    struct _Construct_at_fn {
         template <class _Ty, class... _Types>
             requires requires(_Ty* _Ptr, _Types&&... _Args) {
-                ::new (static_cast<void*>(_Ptr)) _Ty(static_cast<_Types&&>(_Args)...); // per LWG-3888
+                ::new (static_cast<void*>(_Ptr)) _Ty(static_cast<_Types &&>(_Args)...); // per LWG-3888
             }
         _STATIC_CALL_OPERATOR constexpr _Ty* operator()(_Ty* _Location, _Types&&... _Args) _CONST_CALL_OPERATOR
-            // clang-format off
             noexcept(noexcept(
-                ::new(static_cast<void*>(_Location)) _Ty(_STD forward<_Types>(_Args)...))) /* strengthened */ {
-            // clang-format on
+                ::new (static_cast<void*>(_Location)) _Ty(_STD forward<_Types>(_Args)...))) /* strengthened */ {
 #ifdef __EDG__
             return _STD construct_at(_Location, _STD forward<_Types>(_Args)...);
 #else // ^^^ EDG / Other vvv
@@ -547,8 +553,7 @@ namespace ranges {
         requires destructible<iter_value_t<_It>>
     _NODISCARD constexpr _It _Destroy_unchecked(_It _First, _Se _Last) noexcept;
 
-    class _Destroy_at_fn {
-    public:
+    struct _Destroy_at_fn {
         template <destructible _Ty>
         _STATIC_CALL_OPERATOR constexpr void operator()(_Ty* const _Location) _CONST_CALL_OPERATOR noexcept {
             if constexpr (is_array_v<_Ty>) {
@@ -579,19 +584,24 @@ namespace ranges {
     template <_No_throw_input_iterator _It, _No_throw_sentinel_for<_It> _Se>
         requires destructible<iter_value_t<_It>>
     _NODISCARD constexpr _It _Destroy_unchecked(_It _First, _Se _Last) noexcept {
-        if constexpr (is_trivially_destructible_v<iter_value_t<_It>>) {
-            _RANGES advance(_First, _STD move(_Last));
-        } else {
+        if (_STD is_constant_evaluated()) {
             for (; _First != _Last; ++_First) {
                 _RANGES destroy_at(_STD addressof(*_First));
+            }
+        } else {
+            if constexpr (is_trivially_destructible_v<iter_value_t<_It>>) {
+                _RANGES advance(_First, _STD move(_Last));
+            } else {
+                for (; _First != _Last; ++_First) {
+                    _RANGES destroy_at(_STD addressof(*_First));
+                }
             }
         }
 
         return _First;
     }
 
-    class _Destroy_fn {
-    public:
+    struct _Destroy_fn {
         template <_No_throw_input_iterator _It, _No_throw_sentinel_for<_It> _Se>
             requires destructible<iter_value_t<_It>>
         _STATIC_CALL_OPERATOR constexpr _It operator()(_It _First, _Se _Last) _CONST_CALL_OPERATOR noexcept {
@@ -625,11 +635,20 @@ _CONSTEXPR20 _NoThrowFwdIt destroy_n(_NoThrowFwdIt _First, const _Diff _Count_ra
     }
 
     auto _UFirst = _STD _Get_unwrapped_n(_First, _Count);
-    if constexpr (is_trivially_destructible_v<_Iter_value_t<_NoThrowFwdIt>>) {
-        _STD advance(_UFirst, _Count);
-    } else {
+#if _HAS_CXX20
+    if (_STD is_constant_evaluated()) {
         for (; _Count > 0; --_Count, (void) ++_UFirst) {
             _STD _Destroy_in_place(*_UFirst);
+        }
+    } else
+#endif // _HAS_CXX20
+    {
+        if constexpr (is_trivially_destructible_v<_Iter_value_t<_NoThrowFwdIt>>) {
+            _STD advance(_UFirst, _Count);
+        } else {
+            for (; _Count > 0; --_Count, (void) ++_UFirst) {
+                _STD _Destroy_in_place(*_UFirst);
+            }
         }
     }
 
@@ -642,26 +661,32 @@ _NoThrowFwdIt destroy_n(_ExPo&& _Exec, _NoThrowFwdIt _First, _Diff _Count_raw) n
 
 #if _HAS_CXX20
 namespace ranges {
-    class _Destroy_n_fn {
-    public:
+    struct _Destroy_n_fn {
         template <_No_throw_input_iterator _It>
             requires destructible<iter_value_t<_It>>
         _STATIC_CALL_OPERATOR constexpr _It operator()(
-            _It _First, const iter_difference_t<_It> _Count_raw) _CONST_CALL_OPERATOR noexcept {
-            _Algorithm_int_t<iter_difference_t<_It>> _Count = _Count_raw;
+            _It _First, iter_difference_t<_It> _Count) _CONST_CALL_OPERATOR noexcept {
             if (_Count <= 0) {
                 return _First;
             }
 
             auto _UFirst = _STD _Get_unwrapped_n(_STD move(_First), _Count);
-            if constexpr (is_trivially_destructible_v<iter_value_t<_It>>) {
-                _RANGES advance(_UFirst, _Count);
-            } else {
+            if (_STD is_constant_evaluated()) {
                 do {
                     _RANGES destroy_at(_STD addressof(*_UFirst));
                     ++_UFirst;
                     --_Count;
                 } while (_Count > 0);
+            } else {
+                if constexpr (is_trivially_destructible_v<iter_value_t<_It>>) {
+                    _RANGES advance(_UFirst, _Count);
+                } else {
+                    do {
+                        _RANGES destroy_at(_STD addressof(*_UFirst));
+                        ++_UFirst;
+                        --_Count;
+                    } while (_Count > 0);
+                }
             }
 
             _STD _Seek_wrapped(_First, _STD move(_UFirst));
@@ -771,8 +796,7 @@ _NoThrowFwdIt uninitialized_default_construct_n(
 
 #if _HAS_CXX20
 namespace ranges {
-    class _Uninitialized_default_construct_n_fn {
-    public:
+    struct _Uninitialized_default_construct_n_fn {
         template <_No_throw_forward_iterator _It>
             requires default_initializable<iter_value_t<_It>>
         _STATIC_CALL_OPERATOR _It operator()(_It _First, iter_difference_t<_It> _Count) _CONST_CALL_OPERATOR {
@@ -889,8 +913,7 @@ _NoThrowFwdIt uninitialized_value_construct_n(
 
 #if _HAS_CXX20
 namespace ranges {
-    class _Uninitialized_value_construct_n_fn {
-    public:
+    struct _Uninitialized_value_construct_n_fn {
         template <_No_throw_forward_iterator _It>
             requires default_initializable<iter_value_t<_It>>
         _STATIC_CALL_OPERATOR _It operator()(_It _First, iter_difference_t<_It> _Count) _CONST_CALL_OPERATOR {
@@ -1045,18 +1068,10 @@ public:
     }
 
     _NODISCARD _Ty& operator*() const noexcept {
-#if _ITERATOR_DEBUG_LEVEL == 2
-        _STL_VERIFY(_Myptr, "auto_ptr not dereferenceable");
-#endif // _ITERATOR_DEBUG_LEVEL == 2
-
         return *get();
     }
 
     _NODISCARD _Ty* operator->() const noexcept {
-#if _ITERATOR_DEBUG_LEVEL == 2
-        _STL_VERIFY(_Myptr, "auto_ptr not dereferenceable");
-#endif // _ITERATOR_DEBUG_LEVEL == 2
-
         return get();
     }
 
@@ -1089,7 +1104,8 @@ public:
 };
 #endif // _HAS_AUTO_PTR_ETC
 
-_EXPORT_STD class bad_weak_ptr : public exception { // exception type for invalid use of expired weak_ptr object
+_EXPORT_STD class _NODISCARD bad_weak_ptr : public exception {
+    // exception type for invalid use of expired weak_ptr object
 public:
     bad_weak_ptr() noexcept {}
 
@@ -1108,11 +1124,11 @@ private:
 #ifdef _M_CEE_PURE
     // permanent workaround to avoid mentioning _purecall in msvcurt.lib, ptrustu.lib, or other support libs
     virtual void _Destroy() noexcept {
-        _CSTD abort();
+        _STL_REPORT_ERROR("_Ref_count_base base class member functions should not be called");
     }
 
     virtual void _Delete_this() noexcept {
-        _CSTD abort();
+        _STL_REPORT_ERROR("_Ref_count_base base class member functions should not be called");
     }
 #else // ^^^ defined(_M_CEE_PURE) / !defined(_M_CEE_PURE) vvv
     virtual void _Destroy() noexcept     = 0; // destroy managed resource
@@ -1314,7 +1330,15 @@ protected:
 
     constexpr _Ptr_base() noexcept = default;
 
+#if _MSVC_STL_DESTRUCTOR_TOMBSTONES
+    ~_Ptr_base() noexcept {
+        const uintptr_t _Tombstone_value{_MSVC_STL_UINTPTR_TOMBSTONE_VALUE};
+        _Ptr = reinterpret_cast<element_type*>(_Tombstone_value);
+        _Rep = reinterpret_cast<_Ref_count_base*>(_Tombstone_value);
+    }
+#else // ^^^ _MSVC_STL_DESTRUCTOR_TOMBSTONES / !_MSVC_STL_DESTRUCTOR_TOMBSTONES vvv
     ~_Ptr_base() = default;
+#endif // ^^^ !_MSVC_STL_DESTRUCTOR_TOMBSTONES ^^^
 
     template <class _Ty2>
     void _Move_construct_from(_Ptr_base<_Ty2>&& _Right) noexcept {
@@ -1770,6 +1794,14 @@ public:
 
     template <class _Ty2 = _Ty, class _Elem = element_type, enable_if_t<is_array_v<_Ty2>, int> = 0>
     _NODISCARD _Elem& operator[](ptrdiff_t _Idx) const noexcept /* strengthened */ {
+#if _MSVC_STL_HARDENING_SHARED_PTR_ARRAY || _ITERATOR_DEBUG_LEVEL != 0
+        if constexpr (extent_v<_Ty> != 0) {
+            _STL_VERIFY(
+                _Idx >= 0 && static_cast<size_t>(_Idx) < extent_v<_Ty>, "shared_ptr<T[N]> subscript out of range");
+        } else {
+            _STL_VERIFY(_Idx >= 0, "shared_ptr<T[]> subscript out of range");
+        }
+#endif // _MSVC_STL_HARDENING_SHARED_PTR_ARRAY || _ITERATOR_DEBUG_LEVEL != 0
         return get()[_Idx];
     }
 
@@ -2248,7 +2280,8 @@ struct _NODISCARD _Reverse_destroy_multidimensional_n_guard {
 
 template <class _Ty, size_t _Size>
 void _Uninitialized_copy_multidimensional(const _Ty (&_In)[_Size], _Ty (&_Out)[_Size]) {
-    if constexpr (is_trivial_v<_Ty>) {
+    using _Item = remove_all_extents_t<_Ty>;
+    if constexpr (conjunction_v<is_trivially_copy_constructible<_Item>, is_trivially_destructible<_Item>>) {
         _STD _Copy_memmove_n(_In, _Size, _Out);
     } else if constexpr (is_array_v<_Ty>) {
         _Reverse_destroy_multidimensional_n_guard<_Ty> _Guard{_Out, 0};
@@ -2536,7 +2569,7 @@ private:
     }
 
     void _Destroy() noexcept override { // destroy managed resource
-        _STD _Destroy_in_place(_Storage._Value); // use the default mechanism per LWG-4024
+        _STD _Destroy_in_place(_Storage._Value);
     }
 
     void _Delete_this() noexcept override { // destroy self
@@ -2612,7 +2645,8 @@ struct _NODISCARD _Reverse_destroy_multidimensional_n_al_guard {
 template <class _Ty, size_t _Size, class _Alloc>
 void _Uninitialized_copy_multidimensional_al(const _Ty (&_In)[_Size], _Ty (&_Out)[_Size], _Alloc& _Al) {
     using _Item = remove_all_extents_t<_Ty>;
-    if constexpr (conjunction_v<is_trivial<_Ty>, _Uses_default_construct<_Alloc, _Item*, const _Item&>>) {
+    if constexpr (conjunction_v<is_trivially_copy_constructible<_Item>, is_trivially_destructible<_Item>,
+                      _Uses_default_construct<_Alloc, _Item*, const _Item&>>) {
         _STD _Copy_memmove_n(_In, _Size, _Out);
     } else if constexpr (is_array_v<_Ty>) {
         _Reverse_destroy_multidimensional_n_al_guard<_Ty, _Alloc> _Guard{_Out, 0, _Al};
@@ -2782,7 +2816,7 @@ private:
     }
 
     void _Destroy() noexcept override { // destroy managed resource
-        _STD _Reverse_destroy_multidimensional_n(_Get_ptr(), _Size); // use the default mechanism per LWG-4024
+        _STD _Reverse_destroy_multidimensional_n(_Get_ptr(), _Size);
     }
 
     void _Delete_this() noexcept override { // destroy self
@@ -2886,7 +2920,7 @@ private:
     void _Destroy() noexcept override { // destroy managed resource
         // not _Storage._Value as _Ty is an array type (not a class type or a scalar type),
         // and thus cannot be used as a pseudo-destructor (N4964 [expr.prim.id.dtor]).
-        _STD _Destroy_in_place(_Storage); // use the default mechanism per LWG-4024
+        _STD _Destroy_in_place(_Storage);
     }
 
     void _Delete_this() noexcept override { // destroy self
@@ -2994,8 +3028,6 @@ template <class _Ty, class _Alloc, class... _Types>
 #endif // ^^^ !_HAS_CXX20 ^^^
 _NODISCARD_SMART_PTR_ALLOC shared_ptr<_Ty> allocate_shared(const _Alloc& _Al, _Types&&... _Args) {
     // make a shared_ptr to non-array object
-    // Note: As of 2019-05-28, this implements the proposed resolution of LWG-3210 (which controls whether
-    // allocator::construct sees T or const T when _Ty is const qualified)
     using _Refoa   = _Ref_count_obj_alloc3<remove_cv_t<_Ty>, _Alloc>;
     using _Alblock = _Rebind_alloc_t<_Alloc, _Refoa>;
     _Alblock _Rebound(_Al);
@@ -3034,8 +3066,8 @@ _NODISCARD shared_ptr<_Ty> _Allocate_shared_unbounded_array(
     // make a shared_ptr to an unbounded array
     static_assert(is_unbounded_array_v<_Ty>);
     using _Refc             = conditional_t<_IsForOverwrite, //
-        _Ref_count_unbounded_array_alloc_for_overwrite<remove_cv_t<_Ty>, _Alloc>,
-        _Ref_count_unbounded_array_alloc<remove_cv_t<_Ty>, _Alloc>>;
+                    _Ref_count_unbounded_array_alloc_for_overwrite<remove_cv_t<_Ty>, _Alloc>,
+                    _Ref_count_unbounded_array_alloc<remove_cv_t<_Ty>, _Alloc>>;
     constexpr size_t _Align = alignof(_Refc);
     using _Storage          = _Alignas_storage_unit<_Align>;
     _Rebind_alloc_t<_Alloc, _Storage> _Rebound(_Al);
@@ -3331,9 +3363,17 @@ template <class _Dx2>
 using _Unique_ptr_enable_default_t =
     enable_if_t<conjunction_v<negation<is_pointer<_Dx2>>, is_default_constructible<_Dx2>>, int>;
 
+template <class, class = void>
+constexpr bool _Can_form_pointer = false;
+template <class _Ty>
+constexpr bool _Can_form_pointer<_Ty, void_t<_Ty*>> = true;
+
 _EXPORT_STD template <class _Ty, class _Dx /* = default_delete<_Ty> */>
 class unique_ptr { // non-copyable pointer to an object
 public:
+    static_assert(_Can_form_pointer<_Ty>,
+        "unique_ptr<T, D> requires T* to be a valid type (N5001 [unique.ptr.single.general]/1).");
+
     using pointer      = typename _Get_deleter_pointer_type<_Ty, remove_reference_t<_Dx>>::type;
     using element_type = _Ty;
     using deleter_type = _Dx;
@@ -3380,7 +3420,7 @@ public:
 
 #if _HAS_AUTO_PTR_ETC
     template <class _Ty2,
-        enable_if_t<conjunction_v<is_convertible<_Ty2*, _Ty*>, is_same<_Dx, default_delete<_Ty>>>, int> = 0>
+        enable_if_t<conjunction_v<is_convertible<_Ty2*, pointer>, is_same<_Dx, default_delete<_Ty>>>, int> = 0>
     unique_ptr(auto_ptr<_Ty2>&& _Right) noexcept : _Mypair(_Zero_then_variadic_args_t{}, _Right.release()) {}
 #endif // _HAS_AUTO_PTR_ETC
 
@@ -3411,6 +3451,15 @@ public:
         if (_Mypair._Myval2) {
             _Mypair._Get_first()(_Mypair._Myval2);
         }
+
+#if _MSVC_STL_DESTRUCTOR_TOMBSTONES
+        if constexpr (is_pointer_v<pointer>) {
+            if (!_STD _Is_constant_evaluated()) {
+                const auto _Tombstone{reinterpret_cast<pointer>(_MSVC_STL_UINTPTR_TOMBSTONE_VALUE)};
+                _Mypair._Myval2 = _Tombstone;
+            }
+        }
+#endif // _MSVC_STL_DESTRUCTOR_TOMBSTONES
     }
 
     _NODISCARD _CONSTEXPR23 _Dx& get_deleter() noexcept {
@@ -3422,6 +3471,11 @@ public:
     }
 
     _NODISCARD _CONSTEXPR23 add_lvalue_reference_t<_Ty> operator*() const noexcept(noexcept(*_STD declval<pointer>())) {
+#ifdef __cpp_lib_reference_from_temporary
+        static_assert(
+            !reference_converts_from_temporary_v<add_lvalue_reference_t<_Ty>, decltype(*_STD declval<pointer>())>,
+            "Can't return a temporary object from unique_ptr::operator*(). (N5014 [unique.ptr.single.observers]/1)");
+#endif // ^^^ defined(__cpp_lib_reference_from_temporary) ^^^
         return *_Mypair._Myval2;
     }
 
@@ -3468,7 +3522,7 @@ public:
     template <class _Dx2 = _Dx, _Unique_ptr_enable_default_t<_Dx2> = 0>
     constexpr unique_ptr() noexcept : _Mypair(_Zero_then_variadic_args_t{}) {}
 
-    template <class _Uty, class _Is_nullptr = is_same<_Uty, nullptr_t>>
+    template <class _Uty, class _Is_nullptr = is_null_pointer<_Uty>>
     using _Enable_ctor_reset =
         enable_if_t<is_same_v<_Uty, pointer> || _Is_nullptr::value
                         || (is_same_v<pointer, element_type*> && is_pointer_v<_Uty>
@@ -3548,6 +3602,15 @@ public:
         if (_Mypair._Myval2) {
             _Mypair._Get_first()(_Mypair._Myval2);
         }
+
+#if _MSVC_STL_DESTRUCTOR_TOMBSTONES
+        if constexpr (is_pointer_v<pointer>) {
+            if (!_STD _Is_constant_evaluated()) {
+                const auto _Tombstone{reinterpret_cast<pointer>(_MSVC_STL_UINTPTR_TOMBSTONE_VALUE)};
+                _Mypair._Myval2 = _Tombstone;
+            }
+        }
+#endif // _MSVC_STL_DESTRUCTOR_TOMBSTONES
     }
 
     _NODISCARD _CONSTEXPR23 _Dx& get_deleter() noexcept {
@@ -3665,14 +3728,12 @@ _NODISCARD bool operator<=(const unique_ptr<_Ty1, _Dx1>& _Left, const unique_ptr
 }
 
 #if _HAS_CXX20
-// clang-format off
 _EXPORT_STD template <class _Ty1, class _Dx1, class _Ty2, class _Dx2>
     requires three_way_comparable_with<typename unique_ptr<_Ty1, _Dx1>::pointer,
         typename unique_ptr<_Ty2, _Dx2>::pointer>
-_NODISCARD compare_three_way_result_t<typename unique_ptr<_Ty1, _Dx1>::pointer,
-        typename unique_ptr<_Ty2, _Dx2>::pointer>
+_NODISCARD
+    compare_three_way_result_t<typename unique_ptr<_Ty1, _Dx1>::pointer, typename unique_ptr<_Ty2, _Dx2>::pointer>
     operator<=>(const unique_ptr<_Ty1, _Dx1>& _Left, const unique_ptr<_Ty2, _Dx2>& _Right) {
-    // clang-format on
     return _Left.get() <=> _Right.get();
 }
 #endif // _HAS_CXX20
@@ -3852,8 +3913,8 @@ struct owner_less<void> {
 template <class _Ty, class _Dx>
 struct hash<unique_ptr<_Ty, _Dx>> : _Conditionally_enabled_hash<unique_ptr<_Ty, _Dx>,
                                         is_default_constructible_v<hash<typename unique_ptr<_Ty, _Dx>::pointer>>> {
-    static size_t _Do_hash(const unique_ptr<_Ty, _Dx>& _Keyval) noexcept(
-        _Is_nothrow_hashable<typename unique_ptr<_Ty, _Dx>::pointer>::value) {
+    static size_t _Do_hash(const unique_ptr<_Ty, _Dx>& _Keyval)
+        noexcept(_Is_nothrow_hashable<typename unique_ptr<_Ty, _Dx>::pointer>::value) {
         return hash<typename unique_ptr<_Ty, _Dx>::pointer>{}(_Keyval.get());
     }
 };
@@ -3886,7 +3947,7 @@ _CRTIMP2_PURE void __cdecl _Unlock_shared_ptr_spin_lock() noexcept;
 } // extern "C"
 
 struct _Shared_ptr_spin_lock { // class to manage a spin lock for shared_ptr atomic operations
-    _Shared_ptr_spin_lock() { // lock the spin lock
+    _Shared_ptr_spin_lock() noexcept { // lock the spin lock
         _Lock_shared_ptr_spin_lock();
     }
 
@@ -4006,7 +4067,7 @@ protected:
             }
             ::__std_atomic_wait_direct(
                 _STD addressof(_Ptr), _STD addressof(_Old_ptr), sizeof(_Old_ptr), _Remaining_timeout);
-            _Remaining_timeout = (_STD min)(_Max_timeout, _Remaining_timeout * 2);
+            _Remaining_timeout = (_STD min) (_Max_timeout, _Remaining_timeout * 2);
         }
     }
 
@@ -4278,14 +4339,12 @@ struct _Pointer_of_helper<_Ty> {
     using type = _Ty::element_type*;
 };
 
-// clang-format off
 template <class _Ty>
-    requires (!_Has_member_element_type<_Ty> && !_Has_member_pointer<_Ty>
-        && _Has_member_element_type<pointer_traits<_Ty>>)
+    requires (
+        !_Has_member_element_type<_Ty> && !_Has_member_pointer<_Ty> && _Has_member_element_type<pointer_traits<_Ty>>)
 struct _Pointer_of_helper<_Ty> {
     using type = pointer_traits<_Ty>::element_type*;
 };
-// clang-format on
 
 template <class _Ty>
 using _Pointer_of = _Pointer_of_helper<_Ty>::type;
@@ -4315,12 +4374,11 @@ class out_ptr_t {
         "out_ptr_t with shared_ptr requires a deleter (N4950 [out.ptr.t]/3)");
 
 public:
-    explicit out_ptr_t(_SmartPtr& _Smart_ptr_, _ArgsT... _Args_) noexcept(
-        is_nothrow_constructible_v<tuple<_ArgsT...>, _ArgsT...>) /* strengthened */
+    explicit out_ptr_t(_SmartPtr& _Smart_ptr_, _ArgsT... _Args_)
+        noexcept(is_nothrow_constructible_v<tuple<_ArgsT...>, _ArgsT...>) /* strengthened */
         : _Smart_ptr(_Smart_ptr_),
           _Mypair(_One_then_variadic_args_t{}, tuple<_ArgsT...>{_STD forward<_ArgsT>(_Args_)...}) {
-        constexpr bool _Is_resettable = requires { _Smart_ptr.reset(); }; // TRANSITION, DevCom-10291456
-        if constexpr (_Is_resettable) {
+        if constexpr (requires { _Smart_ptr.reset(); }) {
             _Smart_ptr.reset();
         } else {
             static_assert(is_constructible_v<_SmartPtr>, "the adapted pointer type must be default constructible.");
@@ -4399,9 +4457,9 @@ private:
     }
 
 public:
-    explicit inout_ptr_t(_SmartPtr& _Smart_ptr_, _ArgsT... _Args_) noexcept(
-        is_nothrow_constructible_v<tuple<_ArgsT...>, _ArgsT...> //
-            && noexcept(_Get_ptr_from_smart(_Smart_ptr_))) /* strengthened */
+    explicit inout_ptr_t(_SmartPtr& _Smart_ptr_, _ArgsT... _Args_)
+        noexcept(is_nothrow_constructible_v<tuple<_ArgsT...>, _ArgsT...>
+                 && noexcept(_Get_ptr_from_smart(_Smart_ptr_))) /* strengthened */
         : _Smart_ptr(_Smart_ptr_),
           _Mypair(_One_then_variadic_args_t{}, tuple<_ArgsT...>{_STD forward<_ArgsT>(_Args_)...},
               _Get_ptr_from_smart(_Smart_ptr_)) {}
@@ -4466,23 +4524,6 @@ _NODISCARD auto inout_ptr(_SmartPtr& _Smart_ptr, _ArgsT&&... _Args) {
     }
 }
 #endif // _HAS_CXX23
-
-#if _HAS_TR1_NAMESPACE
-namespace _DEPRECATE_TR1_NAMESPACE tr1 {
-    using _STD allocate_shared;
-    using _STD bad_weak_ptr;
-    using _STD const_pointer_cast;
-    using _STD dynamic_pointer_cast;
-    using _STD enable_shared_from_this;
-    using _STD get_deleter;
-    using _STD make_shared;
-    using _STD shared_ptr;
-    using _STD static_pointer_cast;
-    using _STD swap;
-    using _STD weak_ptr;
-} // namespace _DEPRECATE_TR1_NAMESPACE tr1
-#endif // _HAS_TR1_NAMESPACE
-
 _STD_END
 
 // TRANSITION, non-_Ugly attribute tokens

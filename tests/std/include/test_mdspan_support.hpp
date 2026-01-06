@@ -175,11 +175,33 @@ constexpr bool check_accessor_policy_requirements() {
     return true;
 }
 
+template <class ElementType>
+struct TrivialAccessor {
+    using offset_policy    = TrivialAccessor;
+    using element_type     = ElementType;
+    using reference        = ElementType&;
+    using data_handle_type = ElementType*;
+
+    constexpr reference access(data_handle_type handle, std::size_t off) const noexcept {
+        return handle[off];
+    }
+
+    constexpr data_handle_type offset(data_handle_type handle, std::size_t off) const noexcept {
+        return handle + off;
+    }
+
+    int member;
+};
+
+static_assert(check_accessor_policy_requirements<TrivialAccessor<int>>());
+static_assert(std::is_trivially_copyable_v<TrivialAccessor<int>>);
+static_assert(std::is_trivially_default_constructible_v<TrivialAccessor<int>>);
+
 namespace detail {
     template <size_t... Extents, class Fn>
     constexpr void check_members_with_mixed_extents(Fn&& fn) {
         auto select_extent = [](size_t e) consteval {
-            return e == std::dynamic_extent ? (std::min)(sizeof...(Extents), size_t{3}) : e;
+            return e == std::dynamic_extent ? (std::min) (sizeof...(Extents), size_t{3}) : e;
         };
 
         // Check signed integers
@@ -200,7 +222,7 @@ namespace detail {
     template <class Fn, size_t... Seq>
     constexpr void check_members_with_various_extents_impl(Fn&& fn, std::index_sequence<Seq...>) {
         auto static_or_dynamic = [](size_t i) consteval {
-            return i == 0 ? std::dynamic_extent : (std::min)(sizeof...(Seq), size_t{3});
+            return i == 0 ? std::dynamic_extent : (std::min) (sizeof...(Seq), size_t{3});
         };
 
         if constexpr (sizeof...(Seq) <= 1) {

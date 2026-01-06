@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "range_algorithm_support.hpp"
+#include <range_algorithm_support.hpp>
 
 using namespace std;
 
@@ -38,6 +38,7 @@ constexpr void test_one(It iter) {
     static_assert(contiguous_iterator<ConstIt> == contiguous_iterator<It>);
 
     // Validate nested types
+    static_assert(same_as<typename ConstIt::iterator_type, It>);
     static_assert(same_as<typename ConstIt::value_type, iter_value_t<It>>);
     static_assert(same_as<typename ConstIt::difference_type, iter_difference_t<It>>);
     if constexpr (forward_iterator<It>) {
@@ -374,9 +375,35 @@ constexpr void test_p2836r1() {
     }
 }
 
+// GH-5321 "<xutility>: basic_const_iterator<int *> Cannot Convert to basic_const_iterator<const int *>"
+constexpr void test_conversion_instantiation() {
+    struct Base {};
+    struct Derived : Base {};
+
+    {
+        basic_const_iterator<const int*> cit = basic_const_iterator<int*>{};
+        assert(cit.base() == nullptr);
+    }
+    {
+        int n{};
+        basic_const_iterator<const int*> cit = basic_const_iterator<int*>{&n};
+        assert(cit.base() == &n);
+    }
+    {
+        basic_const_iterator<Base*> cit = basic_const_iterator<Derived*>{};
+        assert(cit.base() == nullptr);
+    }
+    {
+        Derived d{};
+        basic_const_iterator<Base*> cit = basic_const_iterator<Derived*>{&d};
+        assert(cit.base() == static_cast<Base*>(&d));
+    }
+}
+
 constexpr bool all_tests() {
     instantiation_test();
     test_p2836r1();
+    test_conversion_instantiation();
     return true;
 }
 

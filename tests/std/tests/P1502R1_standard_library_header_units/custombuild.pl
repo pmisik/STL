@@ -6,11 +6,12 @@ use warnings;
 
 use JSON::PP;
 use Run;
+use Try::Tiny;
 
 sub readFile
 {
     my $filename = $_[0];
-    open(my $handle, "<", $filename) or die("Couldn't open $filename: $!");
+    open(my $handle, "<", $filename) or Run::PrintError(__FILE__, __LINE__, "Couldn't open $filename: $!");
     read($handle, my $string, -s $handle);
     return $string;
 }
@@ -19,14 +20,26 @@ sub loadJson
 {
     my $filename = $_[0];
     my $jsonStr = readFile($filename);
-    return JSON::PP->new->utf8->decode($jsonStr);
+    my $decoded = "";
+    try {
+        $decoded = JSON::PP->new->utf8->decode($jsonStr);
+    } catch {
+        Run::PrintError(__FILE__, __LINE__, "Caught exception in loadJson.");
+    };
+    return $decoded;
 }
 
 sub loadJsonWithComments
 {
     my $filename = $_[0];
     my $jsonStr = readFile($filename);
-    return JSON::PP->new->relaxed->utf8->decode($jsonStr);
+    my $decoded = "";
+    try {
+        $decoded = JSON::PP->new->relaxed->utf8->decode($jsonStr);
+    } catch {
+        Run::PrintError(__FILE__, __LINE__, "Caught exception in loadJsonWithComments.");
+    };
+    return $decoded;
 }
 
 sub getAllHeaders
@@ -160,6 +173,7 @@ sub CustomBuildHook()
     # For convenience, create a library file containing all of the object files that were produced.
     my $libFilename = "stl_header_units.lib";
     Run::ExecuteCommand(join(" ", "lib.exe", "/nologo", "/out:$libFilename", @objFilenames));
+    # TRANSITION, when we test ARM64EC internally, add "/machine:arm64ec" here to match custom_format.py.
 
     Run::ExecuteCL(join(" ", "test.cpp", "/Fe$cwd.exe", @consumeBuiltHeaderUnits, $libFilename));
 }

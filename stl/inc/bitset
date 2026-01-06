@@ -18,22 +18,68 @@ _STL_DISABLE_CLANG_WARNINGS
 #pragma push_macro("new")
 #undef new
 
+// TRANSITION, non-_Ugly attribute tokens
+#pragma push_macro("msvc")
+#pragma push_macro("no_specializations")
+#undef msvc
+#undef no_specializations
+
 #ifndef _STD_BITSET_TO_STREAM_STACK_RESERVATION
 #define _STD_BITSET_TO_STREAM_STACK_RESERVATION 128
 #endif // !defined(_STD_BITSET_TO_STREAM_STACK_RESERVATION)
 
-#if _USE_STD_VECTOR_ALGORITHMS
 extern "C" {
+// These bitset functions sometimes assume that the bit array has zero padding to a multiple of 2 or 4 bytes.
+// The assumptions hold true even for the vNext suggestion to use smaller types for small bitsets (see GH-1498)
+// due to vectorization thresholds.
+
+#if _VECTORIZED_BITSET_TO_STRING
 __declspec(noalias) void __stdcall __std_bitset_to_string_1(
     char* _Dest, const void* _Src, size_t _Size_bits, char _Elem0, char _Elem1) noexcept;
 __declspec(noalias) void __stdcall __std_bitset_to_string_2(
     wchar_t* _Dest, const void* _Src, size_t _Size_bits, wchar_t _Elem0, wchar_t _Elem1) noexcept;
+#endif // ^^^ _VECTORIZED_BITSET_TO_STRING ^^^
+
+#if _VECTORIZED_BITSET_FROM_STRING
+__declspec(noalias) bool __stdcall __std_bitset_from_string_1(void* _Dest, const char* _Src, size_t _Size_bytes,
+    size_t _Size_bits, size_t _Size_chars, char _Elem0, char _Elem1) noexcept;
+__declspec(noalias) bool __stdcall __std_bitset_from_string_2(void* _Dest, const wchar_t* _Src, size_t _Size_bytes,
+    size_t _Size_bits, size_t _Size_chars, wchar_t _Elem0, wchar_t _Elem1) noexcept;
+#endif // ^^^ _VECTORIZED_BITSET_FROM_STRING ^^^
+
 } // extern "C"
-#endif // _USE_STD_VECTOR_ALGORITHMS
 
 _STD_BEGIN
-_EXPORT_STD template <size_t _Bits>
-class bitset { // store fixed-length sequence of Boolean elements
+template <class _Elem, size_t _Bits, bool _Dynamic = (_Bits * sizeof(_Elem) > _STD_BITSET_TO_STREAM_STACK_RESERVATION)>
+struct _Buffer_for_bitset {
+    _Buffer_for_bitset() noexcept                            = default;
+    _Buffer_for_bitset(const _Buffer_for_bitset&)            = delete;
+    _Buffer_for_bitset& operator=(const _Buffer_for_bitset&) = delete;
+
+    ~_Buffer_for_bitset() {
+        delete[] _Buf;
+    }
+
+    void _Allocate() {
+        _Buf = new _Elem[_Bits];
+    }
+
+    _Elem* _Buf = nullptr;
+};
+
+template <class _Elem, size_t _Bits>
+struct _Buffer_for_bitset<_Elem, _Bits, false> {
+    _Buffer_for_bitset() noexcept { /* intentionally not initializing _Buf */ }
+    _Buffer_for_bitset(const _Buffer_for_bitset&)            = delete;
+    _Buffer_for_bitset& operator=(const _Buffer_for_bitset&) = delete;
+
+    void _Allocate() noexcept {}
+
+    _Elem _Buf[(_Bits != 0) ? _Bits : 1];
+};
+
+_EXPORT_STD template <size_t _Bits> // store fixed-length sequence of Boolean elements
+class _NO_SPECIALIZATIONS_CITING("N5014 [namespace.std]/2.1") bitset {
 private:
 #pragma warning(push)
 #pragma warning(disable : 4296) // expression is always true (/Wall)
@@ -73,8 +119,6 @@ public:
         }
 
     private:
-        _CONSTEXPR23 reference() noexcept : _Pbitset(nullptr), _Mypos(0) {}
-
         _CONSTEXPR23 reference(bitset<_Bits>& _Bitset, const size_t _Pos) noexcept : _Pbitset(&_Bitset), _Mypos(_Pos) {}
 
         bitset<_Bits>* _Pbitset;
@@ -82,14 +126,6 @@ public:
     };
 
 private:
-    static constexpr void _Validate(const size_t _Pos) noexcept { // verify that _Pos is within bounds
-#if _ITERATOR_DEBUG_LEVEL == 0
-        (void) _Pos;
-#else // ^^^ _ITERATOR_DEBUG_LEVEL == 0 / _ITERATOR_DEBUG_LEVEL != 0 vvv
-        _STL_VERIFY(_Pos < _Bits, "bitset index outside range");
-#endif // ^^^ _ITERATOR_DEBUG_LEVEL != 0 ^^^
-    }
-
     constexpr bool _Subscript(size_t _Pos) const noexcept {
         return (_Array[_Pos / _Bitsperword] & (_Ty{1} << _Pos % _Bitsperword)) != 0;
     }
@@ -98,13 +134,19 @@ private:
     static constexpr unsigned long long _Mask = (1ULL << (_Need_mask ? _Bits : 0)) - 1ULL;
 
 public:
-    _NODISCARD constexpr bool operator[](size_t _Pos) const noexcept /* strengthened */ {
-        _Validate(_Pos);
+    _NODISCARD constexpr bool operator[](const size_t _Pos) const noexcept /* strengthened */ {
+#if _MSVC_STL_HARDENING_BITSET || _ITERATOR_DEBUG_LEVEL != 0
+        _STL_VERIFY(_Pos < _Bits, "bitset subscript out of range");
+#endif
+
         return _Subscript(_Pos);
     }
 
     _NODISCARD _CONSTEXPR23 reference operator[](const size_t _Pos) noexcept /* strengthened */ {
-        _Validate(_Pos);
+#if _MSVC_STL_HARDENING_BITSET || _ITERATOR_DEBUG_LEVEL != 0
+        _STL_VERIFY(_Pos < _Bits, "bitset subscript out of range");
+#endif
+
         return reference(*this, _Pos);
     }
 
@@ -115,6 +157,31 @@ public:
 private:
     template <class _Traits, class _Elem>
     _CONSTEXPR23 void _Construct(const _Elem* const _Ptr, size_t _Count, const _Elem _Elem0, const _Elem _Elem1) {
+#if _VECTORIZED_BITSET_FROM_STRING
+        constexpr size_t _Bitset_from_string_vector_threshold = 16;
+        if constexpr (_Bits >= _Bitset_from_string_vector_threshold
+                      && _Is_implementation_handled_char_traits<_Traits> && sizeof(_Elem) <= 2) {
+            if (!_STD _Is_constant_evaluated()) {
+                bool _Result;
+
+                if constexpr (sizeof(_Elem) == 1) {
+                    _Result = __std_bitset_from_string_1(_Array, reinterpret_cast<const char*>(_Ptr), sizeof(_Array),
+                        _Bits, _Count, static_cast<char>(_Elem0), static_cast<char>(_Elem1));
+                } else {
+                    _STL_INTERNAL_STATIC_ASSERT(sizeof(_Elem) == 2);
+                    _Result = __std_bitset_from_string_2(_Array, reinterpret_cast<const wchar_t*>(_Ptr), sizeof(_Array),
+                        _Bits, _Count, static_cast<wchar_t>(_Elem0), static_cast<wchar_t>(_Elem1));
+                }
+
+                if (!_Result) {
+                    _Xinv();
+                }
+
+                return;
+            }
+        }
+#endif // ^^^ _VECTORIZED_BITSET_FROM_STRING ^^^
+
         if (_Count > _Bits) {
             for (size_t _Idx = _Bits; _Idx < _Count; ++_Idx) {
                 const auto _Ch = _Ptr[_Idx];
@@ -176,7 +243,9 @@ public:
         _Construct<_Traits>(_Str.data() + _Pos, _Count, _Elem0, _Elem1);
     }
 
-    template <class _Elem>
+    template <class _Elem, enable_if_t<conjunction_v<negation<is_array<_Elem>>, is_trivially_copyable<_Elem>,
+                                           is_standard_layout<_Elem>, is_trivially_default_constructible<_Elem>>,
+                               int> = 0>
     _CONSTEXPR23 explicit bitset(const _Elem* _Ntcts,
         typename basic_string<_Elem>::size_type _Count = basic_string<_Elem>::npos,
         _Elem _Elem0 = static_cast<_Elem>('0'), _Elem _Elem1 = static_cast<_Elem>('1')) {
@@ -427,8 +496,7 @@ public:
     }
 
     _NODISCARD _CONSTEXPR23 bool all() const noexcept {
-        constexpr bool _Zero_length = _Bits == 0;
-        if constexpr (_Zero_length) { // must test for this, otherwise would count one full word
+        if constexpr (_Bits == 0) { // must test for this, otherwise would count one full word
             return true;
         }
 
@@ -461,9 +529,9 @@ public:
     template <class _Elem>
     _CONSTEXPR23 void _To_string(
         _Elem* const _Buf, const size_t _Len, const _Elem _Elem0, const _Elem _Elem1) const noexcept {
-#if _USE_STD_VECTOR_ALGORITHMS
-        constexpr size_t _Bitset_vector_threshold = 32;
-        if constexpr (_Bits >= _Bitset_vector_threshold && is_integral_v<_Elem> && sizeof(_Elem) <= 2) {
+#if _VECTORIZED_BITSET_TO_STRING
+        constexpr size_t _Bitset_to_string_vector_threshold = 32;
+        if constexpr (_Bits >= _Bitset_to_string_vector_threshold && is_integral_v<_Elem> && sizeof(_Elem) <= 2) {
             if (!_Is_constant_evaluated()) {
                 if constexpr (sizeof(_Elem) == 1) {
                     __std_bitset_to_string_1(reinterpret_cast<char*>(_Buf), _Array, _Len, static_cast<char>(_Elem0),
@@ -477,7 +545,7 @@ public:
                 return;
             }
         }
-#endif // _USE_STD_VECTOR_ALGORITHMS
+#endif // ^^^ _VECTORIZED_BITSET_TO_STRING ^^^
 
         for (size_t _Pos = 0; _Pos < _Len; ++_Pos) {
             _Buf[_Pos] = _Subscript(_Len - 1 - _Pos) ? _Elem1 : _Elem0;
@@ -558,14 +626,11 @@ basic_ostream<_Elem, _Tr>& operator<<(basic_ostream<_Elem, _Tr>& _Ostr, const bi
     const _Elem _Elem0       = _Ctype_fac.widen('0');
     const _Elem _Elem1       = _Ctype_fac.widen('1');
 
-    if constexpr (_Bits * sizeof(_Elem) <= _STD_BITSET_TO_STREAM_STACK_RESERVATION) {
-        _Elem _Buf[_Bits + 1];
-        _Right._To_string(_Buf, _Bits, _Elem0, _Elem1);
-        _Buf[_Bits] = _Elem{'\0'};
-        return _Ostr << _Buf;
-    } else {
-        return _Ostr << _Right.template to_string<_Elem, _Tr, allocator<_Elem>>(_Elem0, _Elem1);
-    }
+    _Buffer_for_bitset<_Elem, _Bits> _Buf;
+    _Buf._Allocate();
+    _Right._To_string(_Buf._Buf, _Bits, _Elem0, _Elem1);
+    _Ostr.write(_Buf._Buf, _Bits);
+    return _Ostr;
 }
 
 _EXPORT_STD template <class _Elem, class _Tr, size_t _Bits>
@@ -576,42 +641,44 @@ basic_istream<_Elem, _Tr>& operator>>(basic_istream<_Elem, _Tr>& _Istr, bitset<_
     const _Elem _Elem0               = _Ctype_fac.widen('0');
     const _Elem _Elem1               = _Ctype_fac.widen('1');
     typename _Istr_t::iostate _State = _Istr_t::goodbit;
-    bool _Changed                    = false;
-    string _Str;
+    size_t _Count                    = 0;
+    _Buffer_for_bitset<_Elem, _Bits> _Buf;
     const typename _Istr_t::sentry _Ok(_Istr);
 
     if (_Ok) { // valid stream, extract elements
         _TRY_IO_BEGIN
+        _Buf._Allocate();
         typename _Tr::int_type _Meta = _Istr.rdbuf()->sgetc();
-        for (size_t _Count = _Right.size(); 0 < _Count; _Meta = _Istr.rdbuf()->snextc(), (void) --_Count) {
+        for (; _Count < _Bits; ++_Count, _Meta = _Istr.rdbuf()->snextc()) {
             // test _Meta
-            _Elem _Char;
             if (_Tr::eq_int_type(_Tr::eof(), _Meta)) { // end of file, quit
                 _State |= _Istr_t::eofbit;
                 break;
-            } else if ((_Char = _Tr::to_char_type(_Meta)) != _Elem0 && _Char != _Elem1) {
-                break; // invalid element
-            } else if (_Str.max_size() <= _Str.size()) { // no room in string, give up (unlikely)
-                _State |= _Istr_t::failbit;
-                break;
-            } else { // valid, append '0' or '1'
-                _Str.push_back('0' + (_Char == _Elem1));
-                _Changed = true;
             }
+
+            const _Elem _Char = _Tr::to_char_type(_Meta);
+
+            if (!_Tr::eq(_Char, _Elem0) && !_Tr::eq(_Char, _Elem1)) {
+                break; // invalid element
+            }
+
+            // valid, append '0' or '1'
+            _Buf._Buf[_Count] = '0' + _Tr::eq(_Char, _Elem1);
         }
+
         _CATCH_IO_(_Istr_t, _Istr)
     }
 
     constexpr bool _Has_bits = _Bits > 0;
 
     if constexpr (_Has_bits) {
-        if (!_Changed) {
+        if (_Count == 0) {
             _State |= _Istr_t::failbit;
         }
     }
 
     _Istr.setstate(_State);
-    _Right = bitset<_Bits>(_Str); // convert string and store
+    _Right = bitset<_Bits>{_Buf._Buf, _Count}; // convert string and store
     return _Istr;
 }
 
@@ -625,6 +692,10 @@ struct hash<bitset<_Bits>> {
     }
 };
 _STD_END
+
+// TRANSITION, non-_Ugly attribute tokens
+#pragma pop_macro("no_specializations")
+#pragma pop_macro("msvc")
 
 #pragma pop_macro("new")
 _STL_RESTORE_CLANG_WARNINGS

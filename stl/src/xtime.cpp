@@ -6,7 +6,7 @@
 #include <atomic>
 #include <xtimec.h>
 
-#include "awint.hpp"
+#include <Windows.h>
 
 namespace {
     constexpr long _Nsec_per_sec  = 1000000000L;
@@ -42,7 +42,7 @@ namespace {
         }
         return diff;
     }
-} // namespace
+} // unnamed namespace
 
 extern "C" {
 
@@ -51,7 +51,7 @@ _CRTIMP2_PURE long long __cdecl _Xtime_get_ticks() noexcept {
     constexpr long long _Epoch = 0x19DB1DED53E8000LL;
 
     FILETIME ft;
-    __crtGetSystemTimePreciseAsFileTime(&ft);
+    GetSystemTimePreciseAsFileTime(&ft);
     return ((static_cast<long long>(ft.dwHighDateTime)) << 32) + static_cast<long long>(ft.dwLowDateTime) - _Epoch;
 }
 

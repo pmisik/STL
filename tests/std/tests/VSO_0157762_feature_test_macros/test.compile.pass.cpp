@@ -197,10 +197,8 @@ STATIC_ASSERT(__cpp_lib_common_reference_wrapper == 202302L);
 
 STATIC_ASSERT(__cpp_lib_complex_udls == 201309L);
 
-#if _HAS_CXX23
+#if _HAS_CXX20
 STATIC_ASSERT(__cpp_lib_concepts == 202207L);
-#elif _HAS_CXX20
-STATIC_ASSERT(__cpp_lib_concepts == 202002L);
 #elif defined(__cpp_lib_concepts)
 #error __cpp_lib_concepts is defined
 #endif
@@ -345,8 +343,6 @@ STATIC_ASSERT(__cpp_lib_expected == 202211L);
 #error __cpp_lib_expected is defined
 #endif
 
-STATIC_ASSERT(__cpp_lib_experimental_filesystem == 201406L);
-
 #if _HAS_CXX17
 STATIC_ASSERT(__cpp_lib_filesystem == 201703L);
 #elif defined(__cpp_lib_filesystem)
@@ -357,6 +353,12 @@ STATIC_ASSERT(__cpp_lib_filesystem == 201703L);
 STATIC_ASSERT(__cpp_lib_format == 202304L);
 #elif defined(__cpp_lib_format)
 #error __cpp_lib_format is defined
+#endif
+
+#if _HAS_CXX23
+STATIC_ASSERT(__cpp_lib_format_ranges == 202207L);
+#elif defined(__cpp_lib_format_ranges)
+#error __cpp_lib_format_ranges is defined
 #endif
 
 #if _HAS_CXX20
@@ -455,6 +457,12 @@ STATIC_ASSERT(__cpp_lib_gcd_lcm == 201606L);
 #error __cpp_lib_gcd_lcm is defined
 #endif
 
+#if _HAS_CXX23
+STATIC_ASSERT(__cpp_lib_generator == 202207L);
+#elif defined(__cpp_lib_generator)
+#error __cpp_lib_generator is defined
+#endif
+
 STATIC_ASSERT(__cpp_lib_generic_associative_lookup == 201304L);
 
 #if _HAS_CXX20
@@ -532,6 +540,12 @@ STATIC_ASSERT(__cpp_lib_is_constant_evaluated == 201811L);
 #endif
 
 STATIC_ASSERT(__cpp_lib_is_final == 201402L);
+
+#if _HAS_CXX23 && defined(__clang__) // TRANSITION, GH-5738 tracking VSO-2581622 (MSVC) and VSO-2581623 (EDG)
+STATIC_ASSERT(__cpp_lib_is_implicit_lifetime == 202302L);
+#elif defined(__cpp_lib_is_implicit_lifetime)
+#error __cpp_lib_is_implicit_lifetime is defined
+#endif
 
 #if _HAS_CXX17
 STATIC_ASSERT(__cpp_lib_is_invocable == 201703L);
@@ -696,7 +710,7 @@ STATIC_ASSERT(__cpp_lib_polymorphic_allocator == 201902L);
 #endif
 
 #if _HAS_CXX23
-STATIC_ASSERT(__cpp_lib_print == 202207L);
+STATIC_ASSERT(__cpp_lib_print == 202406L);
 #elif defined(__cpp_lib_print)
 #error __cpp_lib_print is defined
 #endif
@@ -817,6 +831,12 @@ STATIC_ASSERT(__cpp_lib_ranges_zip == 202110L);
 STATIC_ASSERT(__cpp_lib_raw_memory_algorithms == 201606L);
 #elif defined(__cpp_lib_raw_memory_algorithms)
 #error __cpp_lib_raw_memory_algorithms is defined
+#endif
+
+#if _HAS_CXX23 && defined(__clang__) // TRANSITION, MSVC and EDG haven't implemented intrinsics needed for P2255R2.
+STATIC_ASSERT(__cpp_lib_reference_from_temporary == 202202L);
+#elif defined(__cpp_lib_reference_from_temporary)
+#error __cpp_lib_reference_from_temporary is defined
 #endif
 
 #if _HAS_CXX20

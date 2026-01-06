@@ -41,7 +41,7 @@ union _Immortalizer_impl { // constructs _Ty, never destroys
 };
 
 #if defined(_M_CEE) || defined(_M_ARM64EC) || defined(_M_HYBRID) \
-    || defined(__clang__) // TRANSITION, Clang doesn't recognize /ALTERNATENAME, not yet reported
+    || defined(__clang__) // TRANSITION, avoid /ALTERNATENAME for Clang, see GH-5224
 #define _WINDOWS_API              __stdcall
 #define _RENAME_WINDOWS_API(_Api) _Api##_clr
 #else // ^^^ use forwarders / use /ALTERNATENAME vvv
@@ -89,13 +89,13 @@ struct _Init_once_completer {
 };
 
 _EXPORT_STD template <class _Fn, class... _Args>
-void(call_once)(once_flag& _Once, _Fn&& _Fx, _Args&&... _Ax) noexcept(
-    noexcept(_STD invoke(_STD forward<_Fn>(_Fx), _STD forward<_Args>(_Ax)...))) /* strengthened */ {
+void(call_once)(once_flag& _Once, _Fn&& _Fx, _Args&&... _Ax)
+    noexcept(noexcept(_STD invoke(_STD forward<_Fn>(_Fx), _STD forward<_Args>(_Ax)...))) /* strengthened */ {
     // call _Fx(_Ax...) once
     // parentheses against common "#define call_once(flag,func) pthread_once(flag,func)"
     int _Pending;
     if (!_RENAME_WINDOWS_API(__std_init_once_begin_initialize)(&_Once._Opaque, 0, &_Pending, nullptr)) {
-        _CSTD abort();
+        _STL_REPORT_ERROR("InitOnceBeginInitialize() failed");
     }
 
     if (_Pending != 0) {

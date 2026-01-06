@@ -3,10 +3,6 @@
 
 #include <cassert>
 #include <memory>
-#ifndef _M_CEE_PURE
-#include <mutex>
-#endif // _M_CEE_PURE
-#include <new>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -42,39 +38,31 @@ STATIC_ASSERT(!is_constructible_v<tuple<NoDefault, NoDefault>, allocator_arg_t, 
 
 
 // LWG-2510 "Tag types should not be DefaultConstructible"
-template <typename T, typename = void>
-struct IsImplicitlyDefaultConstructible : false_type {};
+template <class T, class = void>
+constexpr bool implicitly_default_constructible = false;
 
-template <typename T>
-void ImplicitlyDefaultConstruct(const T&);
+template <class T>
+void check_implicit_default_construction(const T&); // not defined
 
-template <typename T>
-struct IsImplicitlyDefaultConstructible<T, void_t<decltype(ImplicitlyDefaultConstruct<T>({}))>> : true_type {};
+template <class T>
+constexpr bool implicitly_default_constructible<T, void_t<decltype(check_implicit_default_construction<T>({}))>> = true;
 
 struct ExplicitDefault {
     explicit ExplicitDefault() = default;
 };
 
 template <typename T>
-constexpr bool OrdinaryDC = is_default_constructible_v<T> && IsImplicitlyDefaultConstructible<T>::value;
+constexpr bool OrdinaryDC = is_default_constructible_v<T> && implicitly_default_constructible<T>;
 
 template <typename T>
-constexpr bool ExplicitDC = is_default_constructible_v<T> && !IsImplicitlyDefaultConstructible<T>::value;
+constexpr bool ExplicitDC = is_default_constructible_v<T> && !implicitly_default_constructible<T>;
 
 template <typename T>
-constexpr bool VerbotenDC = !is_default_constructible_v<T> && !IsImplicitlyDefaultConstructible<T>::value;
+constexpr bool VerbotenDC = !is_default_constructible_v<T> && !implicitly_default_constructible<T>;
 
 STATIC_ASSERT(OrdinaryDC<int>);
 STATIC_ASSERT(VerbotenDC<NoDefault>);
 STATIC_ASSERT(ExplicitDC<ExplicitDefault>);
-STATIC_ASSERT(ExplicitDC<nothrow_t>);
-STATIC_ASSERT(ExplicitDC<piecewise_construct_t>);
-STATIC_ASSERT(ExplicitDC<allocator_arg_t>);
-#ifndef _M_CEE_PURE
-STATIC_ASSERT(ExplicitDC<defer_lock_t>);
-STATIC_ASSERT(ExplicitDC<try_to_lock_t>);
-STATIC_ASSERT(ExplicitDC<adopt_lock_t>);
-#endif // _M_CEE_PURE
 
 using Expl = ExplicitDefault;
 using NOPE = NoDefault;
@@ -520,7 +508,7 @@ STATIC_ASSERT(!is_constructible_v<tuple<int, int, int>, allocator_arg_t, allocat
 STATIC_ASSERT(
     is_constructible_v<tuple<int, int, int>, allocator_arg_t, allocator<int>, const int&, const int&, const int&>);
 STATIC_ASSERT(!is_constructible_v<tuple<int, int, int>, allocator_arg_t, allocator<int>, const int&, const int&,
-              const int&, const int&>);
+    const int&, const int&>);
 
 STATIC_ASSERT(!is_constructible_v<tuple<int, int, int>, allocator_arg_t, allocator<int>, short, short>);
 STATIC_ASSERT(is_constructible_v<tuple<int, int, int>, allocator_arg_t, allocator<int>, short, short, short>);
@@ -557,6 +545,13 @@ STATIC_ASSERT(!is_constructible_v<tuple<A, A, A>, allocator_arg_t, allocator<int
 STATIC_ASSERT(!is_constructible_v<tuple<A>, allocator_arg_t, allocator<int>, pair<Ex, Ex>>);
 STATIC_ASSERT(is_constructible_v<tuple<A, A>, allocator_arg_t, allocator<int>, pair<Ex, Ex>>);
 STATIC_ASSERT(!is_constructible_v<tuple<A, A, A>, allocator_arg_t, allocator<int>, pair<Ex, Ex>>);
+
+// Also test that the internal constructor used for the piecewise_construct_t constructor of pair is not public.
+STATIC_ASSERT(!is_constructible_v<pair<int, int>, tuple<>&, tuple<>&, make_index_sequence<0>, make_index_sequence<0>>);
+STATIC_ASSERT(
+    !is_constructible_v<pair<int, int>, tuple<int>&, tuple<>&, make_index_sequence<1>, make_index_sequence<0>>);
+STATIC_ASSERT(
+    !is_constructible_v<pair<int, int>, tuple<int>&, tuple<int>&, make_index_sequence<1>, make_index_sequence<1>>);
 
 
 pair<int, int> func1() {

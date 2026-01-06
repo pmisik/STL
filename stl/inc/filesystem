@@ -352,19 +352,12 @@ namespace filesystem {
 
     inline constexpr _Is_slash_oper _Is_slash{};
 
-    template <class _Ty>
-    _NODISCARD _Ty _Unaligned_load(const void* _Ptr) { // load a _Ty from _Ptr
-        static_assert(is_trivial_v<_Ty>, "Unaligned loads require trivial types");
-        _Ty _Tmp;
-        _CSTD memcpy(&_Tmp, _Ptr, sizeof(_Tmp));
-        return _Tmp;
-    }
-
     _NODISCARD inline bool _Is_drive_prefix(const wchar_t* const _First) {
         // test if _First points to a prefix of the form X:
         // pre: _First points to at least 2 wchar_t instances
         // pre: Little endian
-        auto _Value = _Unaligned_load<unsigned int>(_First);
+        unsigned int _Value;
+        _CSTD memcpy(&_Value, _First, sizeof(_Value)); // load from possibly unaligned address
         _Value &= 0xFFFF'FFDFu; // transform lowercase drive letters into uppercase ones
         _Value -= (static_cast<unsigned int>(L':') << (sizeof(wchar_t) * CHAR_BIT)) | L'A';
         return _Value < 26;
@@ -624,7 +617,7 @@ namespace filesystem {
         friend class _Path_iterator;
         friend inline path absolute(const path& _Input, error_code& _Ec);
         friend inline __std_win_error _Canonical(path& _Result, const wstring& _Text);
-        friend inline path temp_directory_path(error_code& _Ec);
+        friend inline path _Temp_directory_path_impl(error_code& _Ec);
         friend inline path current_path(error_code& _Ec);
         friend inline void current_path(const path& _To);
         friend inline void current_path(const path& _To, error_code& _Ec) noexcept;
@@ -1790,7 +1783,7 @@ namespace filesystem {
         return iterator(_Text.cend(), this);
     }
 
-    _EXPORT_STD class filesystem_error : public system_error { // base of all filesystem-error exceptions
+    _EXPORT_STD class _NODISCARD filesystem_error : public system_error { // base of all filesystem-error exceptions
     public:
         filesystem_error(const string& _Message, const error_code _Errcode)
             : system_error(_Errcode, _Message), _What(runtime_error::what()) {}
@@ -3401,8 +3394,7 @@ namespace filesystem {
     }
 
     _EXPORT_STD inline bool copy_file(
-        const path& _From, const path& _To, const copy_options _Options, error_code& _Ec) noexcept
-    /* strengthened */ {
+        const path& _From, const path& _To, const copy_options _Options, error_code& _Ec) noexcept /* strengthened */ {
         // copy a file _From -> _To according to _Options
         const auto _Result =
             __std_fs_copy_file(_From.c_str(), _To.c_str(), static_cast<__std_fs_copy_options>(_Options));
@@ -3431,38 +3423,21 @@ namespace filesystem {
         return _STD filesystem::copy_file(_From, _To, copy_options::none);
     }
 
-    _NODISCARD inline pair<__std_win_error, bool> _Equivalent(
-        const wchar_t* const _Lhs, const wchar_t* const _Rhs) noexcept {
-        __std_fs_file_id _Left_id;
-        __std_fs_file_id _Right_id;
-        auto _Last_error = __std_fs_get_file_id(&_Left_id, _Lhs);
-        if (_Last_error != __std_win_error::_Success) {
-            return {_Last_error, false};
-        }
-
-        _Last_error = __std_fs_get_file_id(&_Right_id, _Rhs);
-        if (_Last_error != __std_win_error::_Success) {
-            return {_Last_error, false};
-        }
-
-        return {__std_win_error::_Success, _CSTD memcmp(&_Left_id, &_Right_id, sizeof(__std_fs_file_id)) == 0};
-    }
-
     _EXPORT_STD _NODISCARD inline bool equivalent(const path& _Lhs, const path& _Rhs) {
         // test if the paths _Lhs and _Rhs refer to the same file
-        const auto _Result = _Equivalent(_Lhs.c_str(), _Rhs.c_str());
-        if (_Result.first != __std_win_error::_Success) {
-            _Throw_fs_error("equivalent", _Result.first, _Lhs, _Rhs);
+        const auto _Result = __std_fs_equivalent(_Lhs.c_str(), _Rhs.c_str());
+        if (_Result._Error != __std_win_error::_Success) {
+            _Throw_fs_error("equivalent", _Result._Error, _Lhs, _Rhs);
         }
 
-        return _Result.second;
+        return _Result._Equivalent;
     }
 
     _EXPORT_STD _NODISCARD inline bool equivalent(const path& _Lhs, const path& _Rhs, error_code& _Ec) noexcept {
         // test if the paths _Lhs and _Rhs refer to the same file
-        const auto _Result = _Equivalent(_Lhs.c_str(), _Rhs.c_str());
-        _Ec                = _Make_ec(_Result.first);
-        return _Result.second;
+        const auto _Result = __std_fs_equivalent(_Lhs.c_str(), _Rhs.c_str());
+        _Ec                = _Make_ec(_Result._Error);
+        return _Result._Equivalent;
     }
 
     _EXPORT_STD _NODISCARD inline file_status status(const path& _Path);
@@ -3969,7 +3944,7 @@ namespace filesystem {
         if (_Error == __std_win_error::_Success) {
             _Result = file_time_type{file_time_type::duration{_Stats._Last_write_time}};
         } else {
-            _Result = (file_time_type::min)();
+            _Result = (file_time_type::min) ();
         }
 
         return _Error;
@@ -4063,9 +4038,8 @@ namespace filesystem {
         _STD filesystem::permissions(_Target, _Perms, perm_options::replace, _Ec);
     }
 
-    _EXPORT_STD _NODISCARD inline path temp_directory_path(error_code& _Ec) {
+    _NODISCARD inline path _Temp_directory_path_impl(error_code& _Ec) {
         // get a location suitable for temporary storage, and verify that it is a directory
-        _Ec.clear(); // for exception safety
         path _Result;
         _Result._Text.resize(__std_fs_temp_path_max);
         const auto _Temp_result = __std_fs_get_temp_path(_Result._Text.data());
@@ -4079,13 +4053,25 @@ namespace filesystem {
         return _Result;
     }
 
+    _EXPORT_STD _NODISCARD inline path temp_directory_path(error_code& _Ec) {
+        _Ec.clear(); // for exception safety
+        path _Result(_STD filesystem::_Temp_directory_path_impl(_Ec));
+        if (_Ec) {
+            // returns path() if an error occurs. (N5008 [fs.op.temp.dir.path]/3)
+            return {};
+        }
+
+        return _Result;
+    }
+
     _EXPORT_STD _NODISCARD inline path temp_directory_path() {
         // get a location suitable for temporary storage, and verify that it is a directory
         error_code _Ec; // unusual arrangement to allow thrown error_code to have generic_category()
-        path _Result(_STD filesystem::temp_directory_path(_Ec));
+        path _Result(_STD filesystem::_Temp_directory_path_impl(_Ec));
         if (_Ec) {
             _Throw_fs_error("temp_directory_path", _Ec, _Result);
         }
+
         return _Result;
     }
 

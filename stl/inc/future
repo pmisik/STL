@@ -113,7 +113,7 @@ _NODISCARD inline const char* _Future_error_map(int _Errcode) noexcept { // conv
     }
 }
 
-_EXPORT_STD class future_error : public logic_error { // future exception
+_EXPORT_STD class _NODISCARD future_error : public logic_error { // future exception
 public:
     explicit future_error(error_code _Errcode) // internal, TRANSITION, will be removed
         : logic_error(""), _Mycode(_Errcode) {}
@@ -183,6 +183,25 @@ struct _State_deleter : _Deleter_base<_Ty> { // manage allocator and deletion st
     _State_deleter& operator=(const _State_deleter&) = delete;
 
     void _Delete(_Associated_state<_Ty>* _State) noexcept override;
+
+    _Alloc _My_alloc;
+};
+
+template <class _Ty>
+struct __declspec(novtable) _Clonable_deleter_base : _Deleter_base<_Ty> {
+    // TRANSITION, ABI, should be fused into _Deleter_base
+    virtual _Associated_state<_Ty>* _Move_clone(_Associated_state<_Ty>&&) = 0;
+};
+
+template <class _Ty, class _Derived, class _Alloc>
+struct _State_deleter_v2 : _Clonable_deleter_base<_Ty> { // manage allocator and deletion state objects
+    _State_deleter_v2(const _Alloc& _Al) : _My_alloc(_Al) {}
+
+    _State_deleter_v2(const _State_deleter_v2&)            = delete;
+    _State_deleter_v2& operator=(const _State_deleter_v2&) = delete;
+
+    void _Delete(_Associated_state<_Ty>* _State) noexcept override;
+    _Associated_state<_Ty>* _Move_clone(_Associated_state<_Ty>&& _Src) override;
 
     _Alloc _My_alloc;
 };
@@ -389,6 +408,10 @@ public:
         }
     }
 
+    _Mydel* _Get_deleter() const noexcept { // get deleter for cloning
+        return _Deleter;
+    }
+
 protected:
     void _Maybe_run_deferred_function(unique_lock<mutex>& _Lock) { // run a deferred function if not already done
         if (!_Running) { // run the function
@@ -459,29 +482,61 @@ void _State_deleter<_Ty, _Derived, _Alloc>::_Delete(_Associated_state<_Ty>* _Sta
     _STD _Delete_plain_internal(_Del_alloc, this);
 }
 
+template <class _Fret>
+struct _P_arg_type { // type for functions returning T
+    using type = _Fret;
+};
+
+template <class _Fret>
+struct _P_arg_type<_Fret&> { // type for functions returning reference to T
+    using type = _Fret*;
+};
+
+template <>
+struct _P_arg_type<void> { // type for functions returning void
+    using type = int;
+};
+
+template <class _Ret>
+using _P_arg_type_t = typename _P_arg_type<_Ret>::type;
+
 template <class>
 class _Packaged_state;
 
+// class for managing associated asynchronous state for packaged_task
 template <class _Ret, class... _ArgTypes>
-class _Packaged_state<_Ret(_ArgTypes...)>
-    : public _Associated_state<_Ret> { // class for managing associated asynchronous state for packaged_task
+class _Packaged_state<_Ret(_ArgTypes...)> : public _Associated_state<_P_arg_type_t<_Ret>> {
 public:
-    using _Mybase = _Associated_state<_Ret>;
-    using _Mydel  = typename _Mybase::_Mydel;
+    using _Mybase        = _Associated_state<_P_arg_type_t<_Ret>>;
+    using _Mydel         = typename _Mybase::_Mydel;
+    using _Function_type = function<_Ret(_ArgTypes...)>; // TRANSITION, ABI, should not use std::function
 
-    template <class _Fty2>
-    _Packaged_state(_Fty2&& _Fnarg) : _Fn(_STD forward<_Fty2>(_Fnarg)) {}
+    explicit _Packaged_state(const _Function_type& _Fnarg) : _Fn(_Fnarg) {}
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
-    template <class _Fty2, class _Alloc>
+    explicit _Packaged_state(_Function_type&& _Fnarg) noexcept : _Fn(_STD move(_Fnarg)) {}
+
+    template <class _Fty2, enable_if_t<!is_same_v<_Remove_cvref_t<_Fty2>, _Function_type>, int> = 0>
+    explicit _Packaged_state(_Fty2&& _Fnarg) : _Fn(_Secret_copyability_ignoring_tag{}, _STD forward<_Fty2>(_Fnarg)) {}
+
+    template <class _Alloc>
+    _Packaged_state(_Function_type&& _Fnarg, const _Alloc& _Al, _Mydel* _Dp)
+        : _Mybase(_Dp), _Fn(_Secret_copyability_ignoring_tag{}, allocator_arg, _Al, _STD move(_Fnarg)) {}
+
+    template <class _Fty2, class _Alloc, enable_if_t<!is_same_v<_Remove_cvref_t<_Fty2>, _Function_type>, int> = 0>
     _Packaged_state(_Fty2&& _Fnarg, const _Alloc& _Al, _Mydel* _Dp)
-        : _Mybase(_Dp), _Fn(allocator_arg, _Al, _STD forward<_Fty2>(_Fnarg)) {}
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
+        : _Mybase(_Dp), _Fn(_Secret_copyability_ignoring_tag{}, allocator_arg, _Al, _STD forward<_Fty2>(_Fnarg)) {}
 
     void _Call_deferred(_ArgTypes... _Args) { // set deferred call
         _TRY_BEGIN
         // call function object and catch exceptions
-        this->_Set_value(_Fn(_STD forward<_ArgTypes>(_Args)...), true);
+        if constexpr (is_same_v<_Ret, void>) {
+            _Fn(_STD forward<_ArgTypes>(_Args)...);
+            this->_Set_value(1, true);
+        } else if constexpr (is_lvalue_reference_v<_Ret>) {
+            this->_Set_value(_STD addressof(_Fn(_STD forward<_ArgTypes>(_Args)...)), true);
+        } else {
+            this->_Set_value(_Fn(_STD forward<_ArgTypes>(_Args)...), true);
+        }
         _CATCH_ALL
         // function object threw exception; record result
         this->_Set_exception(_STD current_exception(), true);
@@ -491,109 +546,26 @@ public:
     void _Call_immediate(_ArgTypes... _Args) { // call function object
         _TRY_BEGIN
         // call function object and catch exceptions
-        this->_Set_value(_Fn(_STD forward<_ArgTypes>(_Args)...), false);
+        if constexpr (is_same_v<_Ret, void>) {
+            _Fn(_STD forward<_ArgTypes>(_Args)...);
+            this->_Set_value(1, false);
+        } else if constexpr (is_lvalue_reference_v<_Ret>) {
+            this->_Set_value(_STD addressof(_Fn(_STD forward<_ArgTypes>(_Args)...)), false);
+        } else {
+            this->_Set_value(_Fn(_STD forward<_ArgTypes>(_Args)...), false);
+        }
         _CATCH_ALL
         // function object threw exception; record result
         this->_Set_exception(_STD current_exception(), false);
         _CATCH_END
     }
 
-    const auto& _Get_fn() const {
-        return _Fn;
+    _Function_type&& _Get_fn() && noexcept {
+        return _STD move(_Fn);
     }
 
 private:
-    function<_Ret(_ArgTypes...)> _Fn;
-};
-
-template <class _Ret, class... _ArgTypes>
-class _Packaged_state<_Ret&(_ArgTypes...)>
-    : public _Associated_state<_Ret*> { // class for managing associated asynchronous state for packaged_task
-public:
-    using _Mybase = _Associated_state<_Ret*>;
-    using _Mydel  = typename _Mybase::_Mydel;
-
-    template <class _Fty2>
-    _Packaged_state(_Fty2&& _Fnarg) : _Fn(_STD forward<_Fty2>(_Fnarg)) {}
-
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
-    template <class _Fty2, class _Alloc>
-    _Packaged_state(_Fty2&& _Fnarg, const _Alloc& _Al, _Mydel* _Dp)
-        : _Mybase(_Dp), _Fn(allocator_arg, _Al, _STD forward<_Fty2>(_Fnarg)) {}
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
-
-    void _Call_deferred(_ArgTypes... _Args) { // set deferred call
-        _TRY_BEGIN
-        // call function object and catch exceptions
-        this->_Set_value(_STD addressof(_Fn(_STD forward<_ArgTypes>(_Args)...)), true);
-        _CATCH_ALL
-        // function object threw exception; record result
-        this->_Set_exception(_STD current_exception(), true);
-        _CATCH_END
-    }
-
-    void _Call_immediate(_ArgTypes... _Args) { // call function object
-        _TRY_BEGIN
-        // call function object and catch exceptions
-        this->_Set_value(_STD addressof(_Fn(_STD forward<_ArgTypes>(_Args)...)), false);
-        _CATCH_ALL
-        // function object threw exception; record result
-        this->_Set_exception(_STD current_exception(), false);
-        _CATCH_END
-    }
-
-    const auto& _Get_fn() const {
-        return _Fn;
-    }
-
-private:
-    function<_Ret&(_ArgTypes...)> _Fn;
-};
-
-template <class... _ArgTypes>
-class _Packaged_state<void(_ArgTypes...)>
-    : public _Associated_state<int> { // class for managing associated asynchronous state for packaged_task
-public:
-    using _Mybase = _Associated_state<int>;
-    using _Mydel  = typename _Mybase::_Mydel;
-
-    template <class _Fty2>
-    _Packaged_state(_Fty2&& _Fnarg) : _Fn(_STD forward<_Fty2>(_Fnarg)) {}
-
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
-    template <class _Fty2, class _Alloc>
-    _Packaged_state(_Fty2&& _Fnarg, const _Alloc& _Al, _Mydel* _Dp)
-        : _Mybase(_Dp), _Fn(allocator_arg, _Al, _STD forward<_Fty2>(_Fnarg)) {}
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
-
-    void _Call_deferred(_ArgTypes... _Args) { // set deferred call
-        _TRY_BEGIN
-        // call function object and catch exceptions
-        _Fn(_STD forward<_ArgTypes>(_Args)...);
-        this->_Set_value(1, true);
-        _CATCH_ALL
-        // function object threw exception; record result
-        this->_Set_exception(_STD current_exception(), true);
-        _CATCH_END
-    }
-
-    void _Call_immediate(_ArgTypes... _Args) { // call function object
-        _TRY_BEGIN
-        // call function object and catch exceptions
-        _Fn(_STD forward<_ArgTypes>(_Args)...);
-        this->_Set_value(1, false);
-        _CATCH_ALL
-        // function object threw exception; record result
-        this->_Set_exception(_STD current_exception(), false);
-        _CATCH_END
-    }
-
-    const auto& _Get_fn() const {
-        return _Fn;
-    }
-
-private:
-    function<void(_ArgTypes...)> _Fn;
+    _Function_type _Fn;
 };
 
 template <class _Ty, class _Alloc>
@@ -611,11 +583,14 @@ _Associated_state<_Ty>* _Make_associated_state(const _Alloc& _Al) {
     return _STD _Unfancy(_Res.release()); // ownership transferred to caller
 }
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
 template <class _Pack_state, class _Fty2, class _Alloc>
 _Pack_state* _Make_packaged_state(_Fty2&& _Fnarg, const _Alloc& _Al) {
     // construct a _Packaged_state object with an allocator from an rvalue function object
-    using _Delty   = _State_deleter<typename _Pack_state::_Mybase::_State_type, _Pack_state, _Alloc>;
+#ifdef _CPPRTTI // TRANSITION, ABI, should not rely on RTTI
+    using _Delty = _State_deleter_v2<typename _Pack_state::_Mybase::_State_type, _Pack_state, _Alloc>;
+#else // ^^^ defined(_CPPRTTI) / !defined(_CPPRTTI) vvv
+    using _Delty = _State_deleter<typename _Pack_state::_Mybase::_State_type, _Pack_state, _Alloc>;
+#endif // ^^^ !defined(_CPPRTTI) ^^^
     using _Aldelty = _Rebind_alloc_t<_Alloc, _Delty>;
     using _Alstate = _Rebind_alloc_t<_Alloc, _Pack_state>;
 
@@ -626,7 +601,26 @@ _Pack_state* _Make_packaged_state(_Fty2&& _Fnarg, const _Alloc& _Al) {
     (void) _Del.release(); // ownership of _Del.get() now transferred to _Res
     return _STD _Unfancy(_Res.release()); // ownership transferred to caller
 }
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
+
+template <class _Ty, class _Derived, class _Alloc>
+void _State_deleter_v2<_Ty, _Derived, _Alloc>::_Delete(_Associated_state<_Ty>* _State) noexcept {
+    // delete _State and this using stored allocator
+    using _State_allocator = _Rebind_alloc_t<_Alloc, _Derived>;
+    _State_allocator _St_alloc(_My_alloc);
+
+    using _Deleter_allocator = _Rebind_alloc_t<_Alloc, _State_deleter_v2>;
+    _Deleter_allocator _Del_alloc(_My_alloc);
+
+    _Derived* _Ptr = static_cast<_Derived*>(_State);
+
+    _STD _Delete_plain_internal(_St_alloc, _Ptr);
+    _STD _Delete_plain_internal(_Del_alloc, this);
+}
+
+template <class _Ty, class _Derived, class _Alloc>
+_Associated_state<_Ty>* _State_deleter_v2<_Ty, _Derived, _Alloc>::_Move_clone(_Associated_state<_Ty>&& _Src) {
+    return _STD _Make_packaged_state<_Derived>(static_cast<_Derived&&>(_Src)._Get_fn(), _My_alloc);
+}
 
 template <class _Rx>
 class _Deferred_async_state : public _Packaged_state<_Rx()> {
@@ -1227,28 +1221,10 @@ private:
     _Promise<int> _MyPromise;
 };
 
-template <class _Ty, class _Alloc>
-struct uses_allocator<promise<_Ty>, _Alloc> : true_type {};
-
 _EXPORT_STD template <class _Ty>
 void swap(promise<_Ty>& _Left, promise<_Ty>& _Right) noexcept {
     _Left.swap(_Right);
 }
-
-template <class _Fret>
-struct _P_arg_type { // type for functions returning T
-    using type = _Fret;
-};
-
-template <class _Fret>
-struct _P_arg_type<_Fret&> { // type for functions returning reference to T
-    using type = _Fret*;
-};
-
-template <>
-struct _P_arg_type<void> { // type for functions returning void
-    using type = int;
-};
 
 _EXPORT_STD template <class>
 class packaged_task; // not defined
@@ -1257,7 +1233,7 @@ template <class _Ret, class... _ArgTypes>
 class packaged_task<_Ret(_ArgTypes...)> {
     // class that defines an asynchronous provider that returns the result of a call to a function object
 private:
-    using _Ptype              = typename _P_arg_type<_Ret>::type;
+    using _Ptype              = _P_arg_type_t<_Ret>;
     using _MyPromiseType      = _Promise<_Ptype>;
     using _MyStateManagerType = _State_manager<_Ptype>;
     using _MyStateType        = _Packaged_state<_Ret(_ArgTypes...)>;
@@ -1266,17 +1242,21 @@ public:
     packaged_task() = default;
 
     template <class _Fty2, enable_if_t<!is_same_v<_Remove_cvref_t<_Fty2>, packaged_task>, int> = 0>
-    explicit packaged_task(_Fty2&& _Fnarg) : _MyPromise(new _MyStateType(_STD forward<_Fty2>(_Fnarg))) {}
+    explicit packaged_task(_Fty2&& _Fnarg) : _MyPromise(new _MyStateType(_STD forward<_Fty2>(_Fnarg))) {
+        static_assert(_Is_invocable_r<_Ret, decay_t<_Fty2>&, _ArgTypes...>::value,
+            "The function object must be callable with _ArgTypes... and return _Ret (N5014 [futures.task.members]/4).");
+    }
 
-    packaged_task(packaged_task&&) = default;
+    packaged_task(packaged_task&&) noexcept = default;
 
-    packaged_task& operator=(packaged_task&&) = default;
+    packaged_task& operator=(packaged_task&&) noexcept = default;
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
     template <class _Fty2, class _Alloc, enable_if_t<!is_same_v<_Remove_cvref_t<_Fty2>, packaged_task>, int> = 0>
-    packaged_task(allocator_arg_t, const _Alloc& _Al, _Fty2&& _Fnarg)
-        : _MyPromise(_STD _Make_packaged_state<_MyStateType>(_STD forward<_Fty2>(_Fnarg), _Al)) {}
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
+    explicit packaged_task(allocator_arg_t, const _Alloc& _Al, _Fty2&& _Fnarg)
+        : _MyPromise(_STD _Make_packaged_state<_MyStateType>(_STD forward<_Fty2>(_Fnarg), _Al)) {
+        static_assert(_Is_invocable_r<_Ret, decay_t<_Fty2>&, _ArgTypes...>::value,
+            "The function object must be callable with _ArgTypes... and return _Ret (N5014 [futures.task.members]/4).");
+    }
 
     ~packaged_task() noexcept {
         _MyPromise._Get_state()._Abandon();
@@ -1319,9 +1299,22 @@ public:
     }
 
     void reset() { // reset to newly constructed state
-        _MyStateManagerType& _State = _MyPromise._Get_state_for_set();
-        _MyStateType* _MyState      = static_cast<_MyStateType*>(_State._Ptr());
-        _MyPromiseType _New_promise(new _MyStateType(_MyState->_Get_fn()));
+        _MyStateManagerType& _State_mgr = _MyPromise._Get_state_for_set();
+        _MyStateType& _MyState          = *static_cast<_MyStateType*>(_State_mgr._Ptr());
+
+        const auto _New_state_ptr = [&_MyState]() -> _Associated_state<_P_arg_type_t<_Ret>>* {
+#ifdef _CPPRTTI // TRANSITION, ABI, should not rely on RTTI
+            using _Clonable_deleter_t = _Clonable_deleter_base<_P_arg_type_t<_Ret>>;
+            if (const auto _Clonable_deleter = dynamic_cast<_Clonable_deleter_t*>(_MyState._Get_deleter())) {
+                return _Clonable_deleter->_Move_clone(_STD move(_MyState));
+            } else {
+                return new _MyStateType(_STD move(_MyState)._Get_fn());
+            }
+#else // ^^^ defined(_CPPRTTI) / !defined(_CPPRTTI) vvv
+            return new _MyStateType(_STD move(_MyState)._Get_fn());
+#endif // ^^^ !defined(_CPPRTTI) ^^^
+        }();
+        _MyPromiseType _New_promise{_New_state_ptr};
         _MyPromise._Get_state()._Abandon();
         _MyPromise._Swap(_New_promise);
     }
@@ -1345,11 +1338,6 @@ template <class _Fx>
 packaged_task(_Fx) -> packaged_task<typename _Deduce_signature<_Fx>::type>;
 #endif // _HAS_CXX17
 
-#if _HAS_FUNCTION_ALLOCATOR_SUPPORT
-template <class _Ty, class _Alloc>
-struct uses_allocator<packaged_task<_Ty>, _Alloc> : true_type {};
-#endif // _HAS_FUNCTION_ALLOCATOR_SUPPORT
-
 _EXPORT_STD template <class _Ty>
 void swap(packaged_task<_Ty>& _Left, packaged_task<_Ty>& _Right) noexcept {
     _Left.swap(_Right);
@@ -1370,7 +1358,7 @@ template <class... _Types>
 class _Fake_no_copy_callable_adapter {
     // async() is built on packaged_task internals which incorrectly use
     // std::function, which requires that things be copyable. We can't fix this in an
-    // update, so this adapter turns copies into abort(). When VSO-153581 is
+    // update, so this adapter turns copies into _STL_REPORT_ERROR(). When VSO-153581 is
     // fixed, remove this adapter.
 private:
     using _Storaget = tuple<decay_t<_Types>...>;
@@ -1382,7 +1370,7 @@ public:
 
     [[noreturn]] _Fake_no_copy_callable_adapter(const _Fake_no_copy_callable_adapter& _Other)
         : _Storage(_STD move(_Other._Storage)) {
-        _CSTD abort(); // shouldn't be called
+        _STL_REPORT_ERROR("this callable object should not be copied"); // shouldn't be called
     }
 
     _Fake_no_copy_callable_adapter(_Fake_no_copy_callable_adapter&& _Other)          = default;
@@ -1398,7 +1386,7 @@ private:
 };
 
 template <class _Ret, class _Fty>
-_Associated_state<typename _P_arg_type<_Ret>::type>* _Get_associated_state(launch _Psync, _Fty&& _Fnarg) {
+_Associated_state<_P_arg_type_t<_Ret>>* _Get_associated_state(launch _Psync, _Fty&& _Fnarg) {
     // construct associated asynchronous state object for the launch type
     switch (_Psync) { // select launch type
     case launch::deferred:
@@ -1414,7 +1402,7 @@ _NODISCARD_ASYNC future<_Invoke_result_t<decay_t<_Fty>, decay_t<_ArgTypes>...>> 
     launch _Policy, _Fty&& _Fnarg, _ArgTypes&&... _Args) {
     // manages a callable object launched with supplied policy
     using _Ret   = _Invoke_result_t<decay_t<_Fty>, decay_t<_ArgTypes>...>;
-    using _Ptype = typename _P_arg_type<_Ret>::type;
+    using _Ptype = _P_arg_type_t<_Ret>;
     _Promise<_Ptype> _Pr(
         _Get_associated_state<_Ret>(_Policy, _Fake_no_copy_callable_adapter<_Fty, _ArgTypes...>(
                                                  _STD forward<_Fty>(_Fnarg), _STD forward<_ArgTypes>(_Args)...)));

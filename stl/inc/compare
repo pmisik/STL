@@ -20,6 +20,12 @@ _STL_DISABLE_CLANG_WARNINGS
 #pragma push_macro("new")
 #undef new
 
+// TRANSITION, non-_Ugly attribute tokens
+#pragma push_macro("msvc")
+#pragma push_macro("no_specializations")
+#undef msvc
+#undef no_specializations
+
 _STD_BEGIN
 void _Literal_zero_is_expected();
 
@@ -282,9 +288,9 @@ inline constexpr unsigned char _Classify_category<strong_ordering> = _Comparison
 
 _EXPORT_STD template <class... _Types>
 using common_comparison_category_t =
-    conditional_t<(_Classify_category<_Types...> & _Comparison_category_none) != 0, void,
-        conditional_t<(_Classify_category<_Types...> & _Comparison_category_partial) != 0, partial_ordering,
-            conditional_t<(_Classify_category<_Types...> & _Comparison_category_weak) != 0, weak_ordering,
+    conditional_t<((_Classify_category<_Types...> & _Comparison_category_none) != 0), void,
+        conditional_t<((_Classify_category<_Types...> & _Comparison_category_partial) != 0), partial_ordering,
+            conditional_t<((_Classify_category<_Types...> & _Comparison_category_weak) != 0), weak_ordering,
                 strong_ordering>>>;
 
 _EXPORT_STD template <class... _Types>
@@ -303,12 +309,7 @@ concept three_way_comparable = _Half_equality_comparable<_Ty, _Ty> && _Half_orde
 
 _EXPORT_STD template <class _Ty1, class _Ty2, class _Cat = partial_ordering>
 concept three_way_comparable_with =
-    three_way_comparable<_Ty1, _Cat> && three_way_comparable<_Ty2, _Cat>
-#if _HAS_CXX23
-    && _Comparison_common_type_with<_Ty1, _Ty2>
-#else // ^^^ _HAS_CXX23 / !_HAS_CXX23 vvv
-    && common_reference_with<const remove_reference_t<_Ty1>&, const remove_reference_t<_Ty2>&>
-#endif // ^^^ !_HAS_CXX23 ^^^
+    three_way_comparable<_Ty1, _Cat> && three_way_comparable<_Ty2, _Cat> && _Comparison_common_type_with<_Ty1, _Ty2>
     && three_way_comparable<common_reference_t<const remove_reference_t<_Ty1>&, const remove_reference_t<_Ty2>&>, _Cat>
     && _Weakly_equality_comparable_with<_Ty1, _Ty2> && _Partially_ordered_with<_Ty1, _Ty2>
     && requires(const remove_reference_t<_Ty1>& __t, const remove_reference_t<_Ty2>& __u) {
@@ -321,7 +322,7 @@ using compare_three_way_result_t =
     decltype(_STD declval<const remove_reference_t<_Ty1>&>() <=> _STD declval<const remove_reference_t<_Ty2>&>());
 
 _EXPORT_STD template <class _Ty1, class _Ty2 = _Ty1>
-struct compare_three_way_result {};
+struct _NO_SPECIALIZATIONS_CITING("N5014 [cmp.result]/1") compare_three_way_result {};
 
 template <class _Ty1, class _Ty2>
     requires requires { typename compare_three_way_result_t<_Ty1, _Ty2>; }
@@ -454,7 +455,7 @@ namespace _Strong_order {
             } else if constexpr (_Strat == _St::_Three) {
                 return static_cast<strong_ordering>(compare_three_way{}(_Left, _Right));
             } else {
-                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
+                static_assert(false); // unexpected strategy
             }
         }
     };
@@ -580,7 +581,7 @@ namespace _Weak_order {
                 return static_cast<weak_ordering>(
                     static_cast<strong_ordering>(strong_order(_Left, _Right))); // intentional ADL
             } else {
-                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
+                static_assert(false); // unexpected strategy
             }
         }
     };
@@ -665,7 +666,7 @@ namespace _Partial_order {
                 return static_cast<partial_ordering>(
                     static_cast<strong_ordering>(strong_order(_Left, _Right))); // intentional ADL
             } else {
-                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
+                static_assert(false); // unexpected strategy
             }
         }
     };
@@ -721,7 +722,7 @@ namespace _Compare_strong_order_fallback {
                      : _Left < _Right  ? strong_ordering::less
                                        : strong_ordering::greater;
             } else {
-                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
+                static_assert(false); // unexpected strategy
             }
         }
     };
@@ -771,7 +772,7 @@ namespace _Compare_weak_order_fallback {
                      : _Left < _Right  ? weak_ordering::less
                                        : weak_ordering::greater;
             } else {
-                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
+                static_assert(false); // unexpected strategy
             }
         }
     };
@@ -830,7 +831,7 @@ namespace _Compare_partial_order_fallback {
                      : _Right < _Left  ? partial_ordering::greater
                                        : partial_ordering::unordered;
             } else {
-                _STL_INTERNAL_STATIC_ASSERT(false); // unexpected strategy
+                static_assert(false); // unexpected strategy
             }
         }
     };
@@ -840,6 +841,10 @@ inline namespace _Cpos {
     _EXPORT_STD inline constexpr _Compare_partial_order_fallback::_Cpo compare_partial_order_fallback;
 }
 _STD_END
+
+// TRANSITION, non-_Ugly attribute tokens
+#pragma pop_macro("no_specializations")
+#pragma pop_macro("msvc")
 
 #pragma pop_macro("new")
 _STL_RESTORE_CLANG_WARNINGS

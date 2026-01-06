@@ -1,5 +1,5 @@
 // Copyright (c) Microsoft Corporation.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception AND BSL-1.0
 
 
 // Copyright 2018 Ulf Adams
@@ -34,7 +34,7 @@
 
 namespace std {
 
-    // clang-format off
+    // clang-format off: avoid diverging from external code
 
 // vvvvvvvvvv DERIVED FROM d2s_full_table.h vvvvvvvvvv
 

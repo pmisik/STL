@@ -318,27 +318,6 @@ private:
 
 static_assert(check_accessor_policy_requirements<AccessorWithCustomOffsetPolicy<int>>());
 
-template <class ElementType>
-struct TrivialAccessor {
-    using offset_policy    = TrivialAccessor;
-    using element_type     = ElementType;
-    using reference        = ElementType&;
-    using data_handle_type = ElementType*;
-
-    constexpr reference access(data_handle_type handle, size_t off) const noexcept {
-        return handle[off];
-    }
-
-    constexpr data_handle_type offset(data_handle_type handle, size_t off) const noexcept {
-        return handle + off;
-    }
-
-    int member;
-};
-
-static_assert(check_accessor_policy_requirements<TrivialAccessor<int>>());
-static_assert(is_trivial_v<TrivialAccessor<int>>);
-
 template <class Ext, class Layout, template <class> class AccessorTemplate>
 constexpr void check_modeled_concepts_and_member_types() {
     using Accessor = AccessorTemplate<float>;
@@ -601,9 +580,9 @@ constexpr void check_data_handle_and_span_array_constructors() {
         static_assert(is_nothrow_constructible_v<mdspan<bool, dextents<int, 2>, layout_right, VectorBoolAccessor>,
             vector<bool>::iterator, array<short, 2>>); // strengthened
         static_assert(!is_constructible_v<mdspan<int, dextents<int, 2>, layout_right, TrackingAccessor<int>>, int*,
-                      span<int, 2>>);
+            span<int, 2>>);
         static_assert(!is_constructible_v<mdspan<int, dextents<int, 2>, layout_right, TrackingAccessor<int>>, int*,
-                      array<int, 2>>);
+            array<int, 2>>);
     }
 
     { // Check explicitness
@@ -688,9 +667,9 @@ constexpr void check_data_handle_and_extents_constructor() {
         static_assert(is_nothrow_constructible_v<mdspan<bool, dextents<int, 2>, layout_right, VectorBoolAccessor>,
             vector<bool>::iterator, extents<long, 3, 3>>); // strengthened
         static_assert(!is_constructible_v<mdspan<int, dextents<int, 2>, layout_right, TrackingAccessor<int>>, int*,
-                      dextents<signed char, 2>>);
+            dextents<signed char, 2>>);
         static_assert(!is_constructible_v<mdspan<int, dextents<int, 2>, layout_right, TrackingAccessor<int>>, int*,
-                      extents<unsigned char, 4, 4>>);
+            extents<unsigned char, 4, 4>>);
     }
 
     { // Check effects: 'direct-non-list-initializes ptr_ with std::move(p)'
@@ -721,11 +700,11 @@ constexpr void check_data_handle_and_mapping_constructor() {
         static_assert(is_nothrow_constructible_v<mdspan<int, extents<short, 2, 2>, layout_left>, int* const,
             layout_left::mapping<extents<short, 2, 2>>>); // strengthened
         static_assert(!is_constructible_v<
-                      mdspan<vector<int>, extents<long, 5, 5>, TrackingLayout<>, TrackingAccessor<vector<int>>>,
-                      vector<int>*, TrackingLayout<>::mapping<extents<long, 5, 5>>>);
+            mdspan<vector<int>, extents<long, 5, 5>, TrackingLayout<>, TrackingAccessor<vector<int>>>, vector<int>*,
+            TrackingLayout<>::mapping<extents<long, 5, 5>>>);
         static_assert(!is_constructible_v<
-                      mdspan<deque<int>, extents<signed char, 5, 5, 5>, TrackingLayout<>, TrackingAccessor<deque<int>>>,
-                      deque<int>* const, TrackingLayout<>::mapping<extents<signed char, 5, 5, 5>>>);
+            mdspan<deque<int>, extents<signed char, 5, 5, 5>, TrackingLayout<>, TrackingAccessor<deque<int>>>,
+            deque<int>* const, TrackingLayout<>::mapping<extents<signed char, 5, 5, 5>>>);
     }
 
     { // Check effect: 'direct-non-list-initializes ptr_ with std::move(p)'
@@ -780,7 +759,7 @@ constexpr void check_data_handle_and_mapping_and_accessor_constructor() {
 
         using Mds2 = mdspan<short, extents<int, 3, 3, 3>, TrackingLayout<>>;
         static_assert(!is_nothrow_constructible_v<Mds2, Mds2::data_handle_type, const Mds2::mapping_type&,
-                      const Mds2::accessor_type&>);
+            const Mds2::accessor_type&>);
     }
 }
 
@@ -790,9 +769,9 @@ constexpr void check_construction_from_other_mdspan() {
         static_assert(is_nothrow_constructible_v<mdspan<int, extents<int, 4, 4, 4>, layout_stride>,
             mdspan<int, dextents<long, 3>, layout_right>>); // strengthened
         static_assert(!is_constructible_v<mdspan<float, dextents<long long, 2>, layout_left>,
-                      mdspan<float, extents<signed char, 3, 3>, layout_right>>);
+            mdspan<float, extents<signed char, 3, 3>, layout_right>>);
         static_assert(!is_constructible_v<mdspan<double, dextents<unsigned int, 2>, layout_left>,
-                      mdspan<double, extents<unsigned short, 5, 5, 5>, layout_left>>);
+            mdspan<double, extents<unsigned short, 5, 5, 5>, layout_left>>);
     }
 
     { // Check constraint: 'is_constructible_v<accessor_type, const OtherAccessor&>'
@@ -801,7 +780,7 @@ constexpr void check_construction_from_other_mdspan() {
             is_nothrow_constructible_v<mdspan<const double, Ext, layout_right, default_accessor<const double>>,
                 mdspan<double, Ext, layout_right, default_accessor<double>>>); // strengthened
         static_assert(!is_constructible_v<mdspan<const double, Ext, layout_right, TrivialAccessor<const double>>,
-                      mdspan<double, Ext, layout_right, TrivialAccessor<double>>>);
+            mdspan<double, Ext, layout_right, TrivialAccessor<double>>>);
     }
 
     { // Check explicitness
@@ -809,13 +788,13 @@ constexpr void check_construction_from_other_mdspan() {
         static_assert(NotImplicitlyConstructibleFrom<mdspan<int, extents<int, 4, 4>, layout_left>,
             mdspan<int, dextents<long, 2>, layout_stride>>);
         static_assert(!NotImplicitlyConstructibleFrom<mdspan<int, dextents<long, 2>, layout_stride>,
-                      mdspan<int, extents<int, 4, 4>, layout_left>>);
+            mdspan<int, extents<int, 4, 4>, layout_left>>);
         static_assert(NotImplicitlyConstructibleFrom<
             mdspan<const int, extents<int, 4, 4>, layout_left, AccessorWithCustomOffsetPolicy<const int>>,
             mdspan<int, extents<long, 4, 4>, layout_left, AccessorWithCustomOffsetPolicy<int>>>);
         static_assert(!NotImplicitlyConstructibleFrom<
-                      mdspan<const int, extents<int, 4, 4>, layout_left, default_accessor<const int>>,
-                      mdspan<int, extents<long, 4, 4>, layout_left, default_accessor<int>>>);
+            mdspan<const int, extents<int, 4, 4>, layout_left, default_accessor<const int>>,
+            mdspan<int, extents<long, 4, 4>, layout_left, default_accessor<int>>>);
     }
 
     { // Check effects
@@ -1358,25 +1337,6 @@ constexpr void check_deduction_guides() {
         static_assert(same_as<decltype(mds), mdspan<bool, extents<int, 2, 2>, TrackingLayout<>, VectorBoolAccessor>>);
     }
 }
-
-// When
-// * 'Mds::accessor_type' is a specialization of 'default_accessor', and
-// * 'Mds::layout_type' is
-//   * 'layout_left' or 'layout_right' and 'Mds::extents_type::rank_dynamic() == 0', or
-//   * 'layout_stride' and 'Mds::extents_type::rank() == 0'
-// then 'sizeof(Mds) == sizeof(void*)' (MSVC STL specific behavior).
-static_assert(sizeof(mdspan<int, extents<int, 3, 3, 3>, layout_left>) == sizeof(void*));
-static_assert(sizeof(mdspan<int, dextents<int, 3>, layout_left>) > sizeof(void*));
-static_assert(sizeof(mdspan<int, extents<int, 3, 3, 3>, layout_left, TrivialAccessor<int>>) > sizeof(void*));
-
-static_assert(sizeof(mdspan<long, extents<long, 2, 2, 2>, layout_right>) == sizeof(void*));
-static_assert(sizeof(mdspan<long, dextents<long, 2>, layout_right>) > sizeof(void*));
-static_assert(sizeof(mdspan<long, extents<long, 2, 2, 2>, layout_right, TrivialAccessor<long>>) > sizeof(void*));
-
-static_assert(sizeof(mdspan<short, extents<short>, layout_stride>) == sizeof(void*));
-static_assert(sizeof(mdspan<short, extents<short, 4, 4, 4>, layout_stride>) > sizeof(void*));
-static_assert(sizeof(mdspan<short, dextents<short, 4>, layout_stride>) > sizeof(void*));
-static_assert(sizeof(mdspan<short, extents<short, 4, 4, 4>, layout_stride, TrivialAccessor<short>>) > sizeof(void*));
 
 constexpr bool test() {
     check_modeled_concepts_and_member_types<dextents<unsigned long long, 3>, layout_left, default_accessor>();

@@ -10,7 +10,14 @@ create-1es-hosted-pool.ps1 (running on an STL maintainer's machine) creates a "p
 then runs provision-image.ps1 on that VM. This gives us full control over what we install for building and testing
 the STL. After provision-image.ps1 is done, create-1es-hosted-pool.ps1 makes an image of the prototype VM,
 creates a 1ES Hosted Pool that will spin up copies of the image as worker VMs, and finally deletes the prototype VM.
+
+.PARAMETER Arch
+The architecture can be either x64 or arm64.
 #>
+[CmdletBinding(PositionalBinding=$false)]
+Param(
+  [Parameter(Mandatory)][ValidateSet('x64', 'arm64')][String]$Arch
+)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -19,20 +26,31 @@ if ($Env:COMPUTERNAME -cne 'PROTOTYPE') {
   Write-Error 'You should not run provision-image.ps1 on your local machine.'
 }
 
+if ($Arch -ieq 'x64') {
+  Write-Host 'Provisioning x64.'
+  $Provisioning_x64 = $true
+} else {
+  Write-Host 'Provisioning ARM64.'
+  $Provisioning_x64 = $false
+}
+
 $VisualStudioWorkloads = @(
   'Microsoft.VisualStudio.Component.VC.ASAN',
   'Microsoft.VisualStudio.Component.VC.CLI.Support',
   'Microsoft.VisualStudio.Component.VC.CMake.Project',
   'Microsoft.VisualStudio.Component.VC.CoreIde',
   'Microsoft.VisualStudio.Component.VC.Llvm.Clang',
-  'Microsoft.VisualStudio.Component.VC.Tools.ARM',
   'Microsoft.VisualStudio.Component.VC.Tools.ARM64',
   'Microsoft.VisualStudio.Component.VC.Tools.ARM64EC',
   'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
-  'Microsoft.VisualStudio.Component.Windows11SDK.22621'
+  'Microsoft.VisualStudio.Component.Windows11SDK.26100'
 )
 
-$VisualStudioUrl = 'https://aka.ms/vs/17/pre/vs_enterprise.exe'
+# https://learn.microsoft.com/en-us/visualstudio/install/visual-studio-on-arm-devices
+# "There's a single installer for both Visual Studio x64 and Visual Studio Arm64 architectures.
+# The Visual Studio Installer detects whether the system architecture is Arm64.
+# If it is, the installer downloads and installs the Arm64 version of Visual Studio."
+$VisualStudioUrl = 'https://aka.ms/vs/18/insiders/vs_Community.exe'
 $VisualStudioArgs = @('--quiet', '--norestart', '--wait', '--nocache')
 foreach ($workload in $VisualStudioWorkloads) {
   $VisualStudioArgs += '--add'
@@ -40,14 +58,28 @@ foreach ($workload in $VisualStudioWorkloads) {
 }
 
 # https://github.com/PowerShell/PowerShell/releases/latest
-$PowerShellUrl = 'https://github.com/PowerShell/PowerShell/releases/download/v7.4.3/PowerShell-7.4.3-win-x64.msi'
+if ($Provisioning_x64) {
+  $PowerShellUrl = 'https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/PowerShell-7.5.4-win-x64.msi'
+} else {
+  $PowerShellUrl = 'https://github.com/PowerShell/PowerShell/releases/download/v7.5.4/PowerShell-7.5.4-win-arm64.msi'
+}
 $PowerShellArgs = @('/quiet', '/norestart')
 
-$PythonUrl = 'https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe'
+# https://www.python.org
+if ($Provisioning_x64) {
+  $PythonUrl = 'https://www.python.org/ftp/python/3.14.0/python-3.14.0-amd64.exe'
+} else {
+  $PythonUrl = 'https://www.python.org/ftp/python/3.14.0/python-3.14.0-arm64.exe'
+}
 $PythonArgs = @('/quiet', 'InstallAllUsers=1', 'PrependPath=1', 'CompileAll=1', 'Include_doc=0')
 
-$CudaUrl = 'https://developer.download.nvidia.com/compute/cuda/12.4.0/local_installers/cuda_12.4.0_551.61_windows.exe'
-$CudaArgs = @('-s')
+# https://developer.nvidia.com/cuda-toolkit
+if ($Provisioning_x64) {
+  $CudaUrl = 'https://developer.download.nvidia.com/compute/cuda/12.4.0/local_installers/cuda_12.4.0_551.61_windows.exe'
+} else {
+  $CudaUrl = 'CUDA is not installed for ARM64'
+}
+$CudaArgs = @('-s', '-n')
 
 <#
 .SYNOPSIS
@@ -75,7 +107,7 @@ Function DownloadAndInstall {
 
   try {
     Write-Host "Downloading $Name..."
-    $tempPath = 'D:\installerTemp'
+    $tempPath = 'C:\installerTemp'
     mkdir $tempPath -Force | Out-Null
     $fileName = [uri]::new($Url).Segments[-1]
     $installerPath = Join-Path $tempPath $fileName
@@ -92,10 +124,16 @@ Function DownloadAndInstall {
     } else {
       Write-Error "Installation failed! Exited with $exitCode."
     }
-
-    Remove-Item -Path $installerPath
   } catch {
     Write-Error "Installation failed! Exception: $($_.Exception.Message)"
+  }
+
+  try {
+    # Briefly sleep before removing the installer, attempting to avoid "Access to the path '$installerPath' is denied."
+    Start-Sleep -Seconds 5
+    Remove-Item -Path $installerPath
+  } catch {
+    Write-Error "Remove-Item failed! Exception: $($_.Exception.Message)"
   }
 }
 
@@ -105,15 +143,23 @@ Write-Host "Old PowerShell version: $($PSVersionTable.PSVersion)"
 # Skip a blank line to improve the output.
 (cmd /c ver)[1]
 
-DownloadAndInstall -Name 'PowerShell'    -Url $PowerShellUrl   -Args $PowerShellArgs
-DownloadAndInstall -Name 'Python'        -Url $PythonUrl       -Args $PythonArgs
-DownloadAndInstall -Name 'Visual Studio' -Url $VisualStudioUrl -Args $VisualStudioArgs
-DownloadAndInstall -Name 'CUDA'          -Url $CudaUrl         -Args $CudaArgs
+DownloadAndInstall   -Name 'PowerShell'    -Url $PowerShellUrl   -Args $PowerShellArgs
+DownloadAndInstall   -Name 'Python'        -Url $PythonUrl       -Args $PythonArgs
+DownloadAndInstall   -Name 'Visual Studio' -Url $VisualStudioUrl -Args $VisualStudioArgs
+if ($Provisioning_x64) {
+  DownloadAndInstall -Name 'CUDA'          -Url $CudaUrl         -Args $CudaArgs
+}
 
 Write-Host 'Setting environment variables...'
 
 # The STL's PR/CI builds are totally unrepresentative of customer usage.
 [Environment]::SetEnvironmentVariable('VSCMD_SKIP_SENDTELEMETRY', '1', 'Machine')
+
+Write-Host 'Enabling long paths...'
+
+# https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=powershell
+New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' `
+  -Value 1 -PropertyType DWORD -Force | Out-Null
 
 # Tell create-1es-hosted-pool.ps1 that we succeeded.
 Write-Host 'PROVISION_IMAGE_SUCCEEDED'

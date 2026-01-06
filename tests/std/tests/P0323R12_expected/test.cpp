@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#define _CONTAINER_DEBUG_LEVEL 1
-
 #include <any>
 #include <cassert>
 #include <concepts>
@@ -173,7 +171,8 @@ namespace test_unexpected {
 namespace test_unexpect {
     auto copy = unexpect;
     static_assert(is_same_v<decltype(copy), unexpect_t>);
-    static_assert(is_trivial_v<unexpect_t>);
+    static_assert(is_trivially_copyable_v<unexpect_t>);
+    static_assert(is_trivially_default_constructible_v<unexpect_t>);
     static_assert(is_empty_v<unexpect_t>);
 } // namespace test_unexpect
 
@@ -409,9 +408,9 @@ namespace test_expected {
     template <IsTriviallyDestructible triviallyDestructible>
     struct payload_destructor {
         constexpr payload_destructor(bool& destructor_called) : _destructor_called(destructor_called) {}
-        // clang-format off
-        constexpr ~payload_destructor() requires (IsYes(triviallyDestructible)) = default;
-        // clang-format on
+        constexpr ~payload_destructor()
+            requires (IsYes(triviallyDestructible))
+        = default;
         constexpr ~payload_destructor() {
             _destructor_called = true;
         }
@@ -475,14 +474,14 @@ namespace test_expected {
         struct payload_constructors {
             payload_constructors() = default;
             // Note clang does not accept local variables in explicit
-            constexpr explicit(IsYes(explicitConstructible))
-                payload_constructors(const convertible&) noexcept(should_be_noexcept)
+            constexpr explicit(IsYes(explicitConstructible)) payload_constructors(const convertible&)
+                noexcept(should_be_noexcept)
                 : _val(3) {}
-            constexpr explicit(IsYes(explicitConstructible))
-                payload_constructors(convertible&&) noexcept(should_be_noexcept)
+            constexpr explicit(IsYes(explicitConstructible)) payload_constructors(convertible&&)
+                noexcept(should_be_noexcept)
                 : _val(42) {}
-            constexpr explicit(IsYes(explicitConstructible))
-                payload_constructors(initializer_list<int>&, convertible) noexcept(should_be_noexcept)
+            constexpr explicit(IsYes(explicitConstructible)) payload_constructors(initializer_list<int>&, convertible)
+                noexcept(should_be_noexcept)
                 : _val(1337) {}
 
             [[nodiscard]] constexpr bool operator==(const int val) const noexcept {
@@ -2232,8 +2231,8 @@ void test_reinit_regression() {
     }
 }
 
-// Defend against regression of llvm-project#59854, in which clang is confused
-// by the explicit `noexcept` on `expected`'s destructors.
+// Defend against regression of LLVM-59854, in which clang is confused by the
+// explicit `noexcept` on `expected`'s destructors.
 struct Data {
     vector<int> vec_;
     constexpr Data(initializer_list<int> il) : vec_(il) {}
@@ -2315,11 +2314,138 @@ void test_lwg_3843() {
     }
 }
 
+// Test LWG-3886: "Monad mo' problems (in optional and expected)"
+
+enum class Qualification {
+    None,
+    Const,
+    Volatile,
+    ConstVolatile,
+};
+
+template <class T>
+constexpr Qualification CvQualOf =
+    is_const_v<remove_reference_t<T>>
+        ? (is_volatile_v<remove_reference_t<T>> ? Qualification::ConstVolatile : Qualification::Const)
+        : (is_volatile_v<remove_reference_t<T>> ? Qualification::Volatile : Qualification::None);
+
+struct QualDistinction {
+    QualDistinction() = default;
+
+    constexpr QualDistinction(QualDistinction&&) noexcept : qual_{Qualification::None} {}
+    constexpr QualDistinction(const QualDistinction&) noexcept : qual_{Qualification::Const} {}
+    template <class T>
+        requires is_same_v<remove_cvref_t<T>, QualDistinction>
+    constexpr QualDistinction(T&&) noexcept : qual_{CvQualOf<T>} {}
+
+    constexpr QualDistinction& operator=(QualDistinction&&) noexcept {
+        qual_ = Qualification::None;
+        return *this;
+    }
+    constexpr QualDistinction& operator=(const QualDistinction&) noexcept {
+        qual_ = Qualification::Const;
+        return *this;
+    }
+    template <class T>
+        requires is_same_v<remove_cvref_t<T>, QualDistinction>
+    constexpr QualDistinction& operator=(T&&) noexcept {
+        qual_ = CvQualOf<T>;
+        return *this;
+    }
+    template <class T>
+        requires is_same_v<remove_cvref_t<T>, QualDistinction>
+    constexpr const QualDistinction& operator=(T&&) const noexcept {
+        qual_ = CvQualOf<T>;
+        return *this;
+    }
+    template <class T>
+        requires is_same_v<remove_cvref_t<T>, QualDistinction>
+    volatile QualDistinction& operator=(T&&) volatile noexcept {
+        qual_ = CvQualOf<T>;
+        return *this;
+    }
+    template <class T>
+        requires is_same_v<remove_cvref_t<T>, QualDistinction>
+    const volatile QualDistinction& operator=(T&&) const volatile noexcept {
+        qual_ = CvQualOf<T>;
+        return *this;
+    }
+
+    mutable Qualification qual_ = Qualification::None;
+};
+
+constexpr bool test_lwg_3886() {
+    assert((expected<QualDistinction, char>{unexpect}.value_or({}).qual_ == Qualification::None));
+    {
+        expected<QualDistinction, char> ex{unexpect};
+        assert(ex.value_or({}).qual_ == Qualification::None);
+    }
+    assert((expected<QualDistinction, char>{unexpect} = {QualDistinction{}}).value().qual_ == Qualification::None);
+    {
+        expected<QualDistinction, char> ex{in_place};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+        ex = unexpected<char>{'*'};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+    }
+
+    assert((expected<const QualDistinction, char>{unexpect}.value_or({}).qual_ == Qualification::None));
+    {
+        expected<const QualDistinction, char> ex{unexpect};
+        assert(ex.value_or({}).qual_ == Qualification::None);
+    }
+#if 0 // TRANSITION, LWG-3891
+    assert(
+        (expected<const QualDistinction, char>{unexpect} = {QualDistinction{}}).value().qual_ == Qualification::None);
+    {
+        expected<const QualDistinction, char> ex{in_place};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+        ex = unexpected<char>{'*'};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+    }
+#endif // ^^^ no workaround ^^^
+
+    return true;
+}
+
+void test_lwg_3886_volatile() {
+    assert((expected<volatile QualDistinction, char>{unexpect}.value_or({}).qual_ == Qualification::None));
+    {
+        expected<volatile QualDistinction, char> ex{unexpect};
+        assert(ex.value_or({}).qual_ == Qualification::None);
+    }
+#if 0 // TRANSITION, LWG-3891
+    assert((expected<volatile QualDistinction, char>{unexpect} = {QualDistinction{}}).value().qual_
+           == Qualification::None);
+    {
+        expected<volatile QualDistinction, char> ex{in_place};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+        ex = unexpected<char>{'*'};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+    }
+#endif // ^^^ no workaround ^^^
+
+    assert((expected<const volatile QualDistinction, char>{unexpect}.value_or({}).qual_ == Qualification::None));
+    {
+        expected<const volatile QualDistinction, char> ex{unexpect};
+        assert(ex.value_or({}).qual_ == Qualification::None);
+    }
+#if 0 // TRANSITION, LWG-3891
+    assert((expected<const volatile QualDistinction, char>{unexpect} = {QualDistinction{}}).value().qual_
+           == Qualification::None);
+    {
+        expected<const volatile QualDistinction, char> ex{in_place};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+        ex = unexpected<char>{'*'};
+        assert((ex = {QualDistinction{}}).value().qual_ == Qualification::None);
+    }
+#endif // ^^^ no workaround ^^^
+}
+
 // Test GH-4011: these predicates triggered constraint recursion.
 static_assert(copyable<expected<any, int>>);
 static_assert(copyable<expected<void, any>>);
 
-// Test workaround for DevCom-10655311: Class derived from std::expected can't be constructed with bool value type
+// Test DevCom-10655311: Class derived from std::expected can't be constructed with bool value type
 template <class T, class E>
 class DerivedFromExpected : private expected<T, E> {
 public:
@@ -2348,24 +2474,17 @@ static_assert(test_inherited_constructors());
 template <class T, class E>
 struct ambiguating_expected_copy_constructor_caller {
     struct const_lvalue_taker {
-        const_lvalue_taker(const expected<T, E>&) {}
+        const_lvalue_taker(const expected<T, E>&);
     };
 
-    void operator()(expected<T, E>) {}
-    void operator()(const_lvalue_taker) {}
+    void operator()(expected<T, E>);
+    void operator()(const_lvalue_taker);
 };
 
 template <class T, class E>
 struct ambiguating_expected_assignment_source {
-    operator const expected<T, E>&() && {
-        return ex;
-    }
-
-    operator expected<T, E>&&() && {
-        return move(ex);
-    }
-
-    expected<T, E> ex;
+    operator const expected<T, E>&() &&;
+    operator expected<T, E>&&() &&;
 };
 
 struct move_only {
@@ -2384,11 +2503,92 @@ static_assert(
 #ifndef __EDG__ // TRANSITION, VSO-1601179
 static_assert(!is_assignable_v<expected<int, char>&, ambiguating_expected_assignment_source<int, char>>);
 static_assert(!is_assignable_v<expected<void, int>&, ambiguating_expected_assignment_source<void, int>>);
-#endif // ^^^ no workaround ^^^
-#ifndef __EDG__ // TRANSITION, VSO-2188364
 static_assert(!is_assignable_v<expected<move_only, char>&, ambiguating_expected_assignment_source<move_only, char>>);
 static_assert(!is_assignable_v<expected<void, move_only>&, ambiguating_expected_assignment_source<void, move_only>>);
 #endif // ^^^ no workaround ^^^
+
+static_assert(test_lwg_3886());
+
+// Test LWG-4222 "expected constructor from a single value missing a constraint"
+
+struct ConstructibleFromEverything {
+    explicit ConstructibleFromEverything(auto);
+};
+
+struct ConvertibleFromInt {
+    ConvertibleFromInt(int);
+};
+
+static_assert(!is_constructible_v<expected<ConstructibleFromEverything, ConvertibleFromInt>, unexpect_t&>);
+static_assert(!is_constructible_v<expected<ConstructibleFromEverything, ConvertibleFromInt>, const unexpect_t&>);
+static_assert(!is_constructible_v<expected<ConstructibleFromEverything, ConvertibleFromInt>, unexpect_t>);
+static_assert(!is_constructible_v<expected<ConstructibleFromEverything, ConvertibleFromInt>, const unexpect_t>);
+
+// Test LWG-4366 "Heterogeneous comparison of expected may be ill-formed"
+// Test taken from an example in the issue text
+namespace test_lwg_4366 {
+    struct E1 {};
+    struct E2 {};
+
+    struct Bool {
+        constexpr operator bool() const {
+            return false;
+        }
+        constexpr explicit operator bool() = delete;
+    };
+
+    constexpr Bool operator==(E1, E2) {
+        return {};
+    }
+
+    constexpr void test() {
+        unexpected e1{E1{}};
+        unexpected e2{E2{}};
+        (void) (expected<int, E1>{e1} == e2);
+        (void) (expected<void, E1>{e1} == e2);
+        (void) (e1 == e2);
+        (void) (expected<int, E1>{e1} == expected<int, E2>{e2});
+        (void) (expected<void, E1>{e1} == expected<void, E2>{e2});
+    }
+
+    template <bool has_noexcept_operator_bool>
+    struct bool_with_noexcept {
+        constexpr operator bool() const noexcept(has_noexcept_operator_bool) {
+            return false;
+        }
+    };
+
+    // Test that operator== has correct noexcept specification (based on noexcept specs of underlying expressions)
+
+    struct E3 {};
+    template <bool has_noexcept_operator_bool>
+    struct E4 {};
+
+    template <bool X>
+    constexpr bool_with_noexcept<X> operator==(E3, E4<X>) noexcept {
+        return {};
+    }
+
+    template <bool has_noexcept_operator_bool>
+    constexpr void test2() {
+        unexpected e3{E3{}};
+        unexpected e4{E4<has_noexcept_operator_bool>{}};
+
+        (void) (expected<int, E3>{e3} == e4);
+        (void) (expected<void, E3>{e3} == e4);
+        (void) (e3 == e4);
+        (void) (expected<int, E3>{e3} == expected<int, E4<has_noexcept_operator_bool>>{e4});
+        (void) (expected<void, E3>{e3} == expected<void, E4<has_noexcept_operator_bool>>{e4});
+
+        static_assert(has_noexcept_operator_bool == noexcept(expected<int, E3>{e3} == e4));
+        static_assert(has_noexcept_operator_bool == noexcept(expected<void, E3>{e3} == e4));
+        static_assert(has_noexcept_operator_bool == noexcept(e3 == e4));
+        static_assert(has_noexcept_operator_bool
+                      == noexcept(expected<int, E3>{e3} == expected<int, E4<has_noexcept_operator_bool>>{e4}));
+        static_assert(has_noexcept_operator_bool
+                      == noexcept(expected<void, E3>{e3} == expected<void, E4<has_noexcept_operator_bool>>{e4}));
+    }
+} // namespace test_lwg_4366
 
 int main() {
     test_unexpected::test_all();
@@ -2406,5 +2606,11 @@ int main() {
 
     test_reinit_regression();
     test_lwg_3843();
+    test_lwg_3886();
+    test_lwg_3886_volatile();
     test_inherited_constructors();
+
+    test_lwg_4366::test();
+    test_lwg_4366::test2<true>();
+    test_lwg_4366::test2<false>();
 }
